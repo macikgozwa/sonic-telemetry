@@ -715,9 +715,6 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 
 	// Init the path to value map, it saves the previous value
 	path2ValueMap := make(map[tablePath]string)
-	for _, tblPath := range tblPaths {
-		path2ValueMap[tblPath] = ""
-	}
 	synced := bool(false)
 
 	for {
@@ -743,17 +740,18 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 						continue
 					}
 					log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
-					enqueFatalMsg(c, fmt.Sprintf("%v doesn't exist with key %v in db", tblPath.field, key))
-					return
-				}
-				if err != nil {
+					val = ""
+				} else if err != nil {
 					log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
-					enqueFatalMsg(c, fmt.Sprintf(" redis HGet error on %v with key %v", tblPath.field, key))
-					return
+					val = ""
 				}
-				if supressRedundant && val == path2ValueMap[tblPath] {
+
+				// This value was saved before and it hasn't changed since then
+				_, valueMapped := path2ValueMap[tblPath]
+				if supressRedundant && valueMapped && val == path2ValueMap[tblPath] {
 					continue
 				}
+
 				path2ValueMap[tblPath] = val
 				fv := map[string]string{tblPath.jsonField: val}
 				msi[tblPath.jsonTableKey] = fv
