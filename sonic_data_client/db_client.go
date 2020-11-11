@@ -800,42 +800,61 @@ func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant bool,
 		key = tblPath.tableName
 	}
 
-	var val string
-	synced := false
+	readVal := func() string {
+		newVal, err := redisDb.HGet(key, tblPath.field).Result()
+		if err == redis.Nil {
+			log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
+			newVal = ""
+		} else if err != nil {
+			log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
+			newVal = ""
+		}
+
+		return newVal
+	}
+
+	sendVal := func(newVal string) error {
+		spbv := &spb.Value{
+			Prefix:    c.prefix,
+			Path:      gnmiPath,
+			Timestamp: time.Now().UnixNano(),
+			Val: &gnmipb.TypedValue{
+				Value: &gnmipb.TypedValue_StringVal{
+					StringVal: newVal,
+				},
+			},
+		}
+
+		if err := c.q.Put(Value{spbv}); err != nil {
+			log.V(1).Infof("Queue error:  %v", err)
+			return err
+		}
+
+		return nil
+	}
+
+	// Read the initial value and signal sync after sending it
+	val := readVal()
+	err := sendVal(val)
+	if err != nil {
+		putFatalMsg(c.q, err.Error())
+		c.synced.Done()
+		return
+	}
+	c.synced.Done()
+
 	for {
 		select {
 		case <-c.channel:
 			log.V(1).Infof("Stopping dbFieldSubscribe routine for Client %s ", c)
 			return
 		case <-time.After(interval):
-			newVal, err := redisDb.HGet(key, tblPath.field).Result()
-			if err == redis.Nil {
-				log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
-				newVal = ""
-			} else if err != nil {
-				log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
-				newVal = ""
-			}
+			newVal := readVal()
 
-			if supressRedundant == false || newVal != val || synced == false {
-				spbv := &spb.Value{
-					Prefix:    c.prefix,
-					Path:      gnmiPath,
-					Timestamp: time.Now().UnixNano(),
-					Val: &gnmipb.TypedValue{
-						Value: &gnmipb.TypedValue_StringVal{
-							StringVal: newVal,
-						},
-					},
-				}
-
-				if err = c.q.Put(Value{spbv}); err != nil {
+			if supressRedundant == false || newVal != val {
+				if err = sendVal(newVal); err != nil {
 					log.V(1).Infof("Queue error:  %v", err)
 					return
-				}
-				if !synced {
-					c.synced.Done()
-					synced = true
 				}
 				val = newVal
 			}
