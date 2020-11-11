@@ -167,7 +167,7 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 		log.V(2).Infof("Sub mode: %v, path: %v", sub.GetMode(), sub.GetPath())
 		subMode := sub.GetMode()
 
-		log.V(2).Infof("%s mode subscription selected, %v", sub.GetPath())
+		log.V(2).Infof("%s mode subscription selected, %v", subMode, sub.GetPath())
 
 		if subMode == gnmipb.SubscriptionMode_SAMPLE {
 			c.w.Add(1)
