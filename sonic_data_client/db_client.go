@@ -715,7 +715,71 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 
 	// Init the path to value map, it saves the previous value
 	path2ValueMap := make(map[tablePath]string)
-	synced := bool(false)
+
+	readVal := func() map[string]interface{} {
+		msi := make(map[string]interface{})
+		for _, tblPath := range tblPaths {
+			var key string
+			if tblPath.tableKey != "" {
+				key = tblPath.tableName + tblPath.delimitor + tblPath.tableKey
+			} else {
+				key = tblPath.tableName
+			}
+			// run redis get directly for field value
+			redisDb := Target2RedisDb[tblPath.dbName]
+			val, err := redisDb.HGet(key, tblPath.field).Result()
+			if err == redis.Nil {
+				// This log should be verbose
+				log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
+				val = ""
+			} else if err != nil {
+				log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
+				val = ""
+			}
+
+			// This value was saved before and it hasn't changed since then
+			_, valueMapped := path2ValueMap[tblPath]
+			if supressRedundant && valueMapped && val == path2ValueMap[tblPath] {
+				continue
+			}
+
+			path2ValueMap[tblPath] = val
+			fv := map[string]string{tblPath.jsonField: val}
+			msi[tblPath.jsonTableKey] = fv
+			log.V(6).Infof("new value %v for %v", val, tblPath)
+		}
+
+		return msi
+	}
+
+	sendVal := func(msi map[string]interface{}) error {
+		val, err := msi2TypedValue(msi)
+		if err != nil {
+			enqueFatalMsg(c, err.Error())
+			return err
+		}
+
+		spbv := &spb.Value{
+			Prefix:    c.prefix,
+			Path:      gnmiPath,
+			Timestamp: time.Now().UnixNano(),
+			Val:       val,
+		}
+
+		if err = c.q.Put(Value{spbv}); err != nil {
+			log.V(1).Infof("Queue error:  %v", err)
+			return err
+		}
+
+		return nil
+	}
+
+	msi := readVal()
+	if err := sendVal(msi); err != nil {
+		c.synced.Done()
+		return
+	}
+	c.synced.Done()
 
 	for {
 		select {
@@ -723,60 +787,12 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 			log.V(1).Infof("Stopping dbFieldMultiSubscribe routine for Client %s ", c)
 			return
 		case <-time.After(interval):
-			msi := make(map[string]interface{})
-			for _, tblPath := range tblPaths {
-				var key string
-				if tblPath.tableKey != "" {
-					key = tblPath.tableName + tblPath.delimitor + tblPath.tableKey
-				} else {
-					key = tblPath.tableName
-				}
-				// run redis get directly for field value
-				redisDb := Target2RedisDb[tblPath.dbName]
-				val, err := redisDb.HGet(key, tblPath.field).Result()
-				if err == redis.Nil {
-					// This log should be verbose
-					log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
-					val = ""
-				} else if err != nil {
-					log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
-					val = ""
-				}
-
-				// This value was saved before and it hasn't changed since then
-				_, valueMapped := path2ValueMap[tblPath]
-				if supressRedundant && valueMapped && val == path2ValueMap[tblPath] {
-					continue
-				}
-
-				path2ValueMap[tblPath] = val
-				fv := map[string]string{tblPath.jsonField: val}
-				msi[tblPath.jsonTableKey] = fv
-				log.V(6).Infof("new value %v for %v", val, tblPath)
-			}
+			msi := readVal()
 
 			if len(msi) != 0 {
-				val, err := msi2TypedValue(msi)
-				if err != nil {
-					enqueFatalMsg(c, err.Error())
-					return
-				}
-
-				spbv := &spb.Value{
-					Prefix:    c.prefix,
-					Path:      gnmiPath,
-					Timestamp: time.Now().UnixNano(),
-					Val:       val,
-				}
-
-				if err = c.q.Put(Value{spbv}); err != nil {
+				if err := sendVal(msi); err != nil {
 					log.V(1).Infof("Queue error:  %v", err)
 					return
-				}
-
-				if !synced {
-					c.synced.Done()
-					synced = true
 				}
 			}
 		}
