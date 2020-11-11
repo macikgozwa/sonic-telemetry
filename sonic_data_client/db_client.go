@@ -735,10 +735,7 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 				redisDb := Target2RedisDb[tblPath.dbName]
 				val, err := redisDb.HGet(key, tblPath.field).Result()
 				if err == redis.Nil {
-					if tblPath.jsonField != "" {
-						// ignore non-existing field which was derived from virtual path
-						continue
-					}
+					// This log should be verbose
 					log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
 					val = ""
 				} else if err != nil {
@@ -937,9 +934,46 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 
 	tblPaths := c.pathG2S[gnmiPath]
 	msiAll := make(map[string]interface{})
+	rsdList := []redisSubData{}
+	synced := false
 
-	updateChannel := make(chan map[string]interface{})
+	// Helper to signal sync
+	signalSync := func() {
+		if !synced {
+			c.synced.Done()
+			synced = true
+		}
+	}
 
+	// Helper to handle fatal case.
+	handleFatalMsg := func(msg string) {
+		log.V(1).Infof(msg)
+		enqueFatalMsg(c, msg)
+		signalSync()
+	}
+
+	// Helper to send hash data over the stream
+	sendMsiData := func(msiData map[string]interface{}) error {
+		val, err := msi2TypedValue(msiData)
+		if err != nil {
+			return err
+		}
+
+		var spbv *spb.Value
+		spbv = &spb.Value{
+			Prefix:    c.prefix,
+			Path:      gnmiPath,
+			Timestamp: time.Now().UnixNano(),
+			Val:       val,
+		}
+		if err = c.q.Put(Value{spbv}); err != nil {
+			return fmt.Errorf("Queue error:  %v", err)
+		}
+
+		return nil
+	}
+
+	// Go through the paths and idetify the tables to register.
 	for _, tblPath := range tblPaths {
 		// Subscribe to keyspace notification
 		pattern := "__keyspace@" + strconv.Itoa(int(spb.Target_value[tblPath.dbName])) + "__:"
@@ -964,21 +998,19 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 
 		msgi, err := pubsub.ReceiveTimeout(time.Second)
 		if err != nil {
-			log.V(1).Infof("psubscribe to %s failed for %v", pattern, tblPath)
-			enqueFatalMsg(c, fmt.Sprintf("psubscribe to %s failed for %v", pattern, tblPath))
+			handleFatalMsg(fmt.Sprintf("psubscribe to %s failed for %v", pattern, tblPath))
 			return
 		}
 		subscr := msgi.(*redis.Subscription)
 		if subscr.Channel != pattern {
-			log.V(1).Infof("psubscribe to %s failed for %v", pattern, tblPath)
-			enqueFatalMsg(c, fmt.Sprintf("psubscribe to %s failed for %v", pattern, tblPath))
+			handleFatalMsg(fmt.Sprintf("psubscribe to %s failed for %v", pattern, tblPath))
 			return
 		}
 		log.V(2).Infof("Psubscribe succeeded for %v: %v", tblPath, subscr)
 
 		err = tableData2Msi(&tblPath, false, nil, &msiAll)
 		if err != nil {
-			enqueFatalMsg(c, err.Error())
+			handleFatalMsg(err.Error())
 			return
 		}
 		rsd := redisSubData{
@@ -986,49 +1018,40 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 			pubsub:    pubsub,
 			prefixLen: prefixLen,
 		}
+		rsdList = append(rsdList, rsd)
+	}
+
+	// Send all available data and signal the synced flag.
+	if err := sendMsiData(msiAll); err != nil {
+		handleFatalMsg(err.Error())
+		return
+	}
+	c.synced.Done()
+
+	// Start routines to listen on the table changes.
+	updateChannel := make(chan map[string]interface{})
+	for _, rsd := range rsdList {
 		go dbSingleTableKeySubscribe(rsd, c, updateChannel)
 	}
 
-	sendMsiData := func(msiData map[string]interface{}) error {
-		val, err := msi2TypedValue(msiData)
-		if err != nil {
-			enqueFatalMsg(c, err.Error())
-			return err
-		}
-
-		var spbv *spb.Value
-		spbv = &spb.Value{
-			Prefix:    c.prefix,
-			Path:      gnmiPath,
-			Timestamp: time.Now().UnixNano(),
-			Val:       val,
-		}
-		if err = c.q.Put(Value{spbv}); err != nil {
-			log.V(1).Infof("Queue error:  %v", err)
-			return err
-		}
-
-		return nil
-	}
-
-	// First sync for this key is done
-	sendMsiData(msiAll)
-	c.synced.Done()
-
+	// Listen on updates from tables.
+	// Depending on the interval, send the updates every interval or on change only.
 	intervalTicker := make(<-chan time.Time)
-
 	for {
 
+		// The interval ticker ticks only when the interval is non-zero.
+		// Otherwise (e.g. on-change mode) it would never tick.
 		if interval > 0 {
 			intervalTicker = time.After(interval)
 		}
 
 		select {
 		case updatedTable := <-updateChannel:
-			log.V(1).Infof("update received:  %v", updatedTable)
-
+			log.V(1).Infof("update received: %v", updatedTable)
 			if interval == 0 {
+				// on-change mode, send the updated data.
 				if err := sendMsiData(updatedTable); err != nil {
+					handleFatalMsg(err.Error())
 					return
 				}
 			} else {
@@ -1039,9 +1062,9 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 			}
 		case <-intervalTicker:
 			if err := sendMsiData(msiAll); err != nil {
+				handleFatalMsg(err.Error())
 				return
 			}
-
 		case <-c.channel:
 			log.V(1).Infof("Stopping dbTableKeySubscribe routine for %v ", c.pathG2S)
 			return
