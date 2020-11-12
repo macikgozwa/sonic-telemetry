@@ -202,9 +202,6 @@ func streamOnChangeSubscription(sub *gnmipb.Subscription, c *DbClient) {
 	tblPaths := c.pathG2S[gnmiPath]
 	log.V(2).Infof("%v, %v", gnmiPath, tblPaths[0].field)
 
-	c.w.Add(1)
-	c.synced.Add(1)
-
 	if tblPaths[0].field != "" {
 		if len(tblPaths) > 1 {
 			go dbFieldMultiSubscribe(gnmiPath, c, true, time.Millisecond*200)
@@ -729,9 +726,11 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 				// This log should be verbose
 				log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
 				val = ""
+				continue
 			} else if err != nil {
 				log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
 				val = ""
+				continue
 			}
 
 			// This value was saved before and it hasn't changed since then
@@ -1058,7 +1057,7 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 		handleFatalMsg(err.Error())
 		return
 	}
-	c.synced.Done()
+	signalSync()
 
 	// Start routines to listen on the table changes.
 	updateChannel := make(chan map[string]interface{})
