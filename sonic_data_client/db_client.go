@@ -723,14 +723,15 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 			redisDb := Target2RedisDb[tblPath.dbName]
 			val, err := redisDb.HGet(key, tblPath.field).Result()
 			if err == redis.Nil {
-				// This log should be verbose
+				if tblPath.jsonField != "" {
+					// ignore non-existing field which was derived from virtual path
+					continue
+				}
 				log.V(2).Infof("%v doesn't exist with key %v in db", tblPath.field, key)
 				val = ""
-				continue
 			} else if err != nil {
 				log.V(1).Infof(" redis HGet error on %v with key %v", tblPath.field, key)
 				val = ""
-				continue
 			}
 
 			// This value was saved before and it hasn't changed since then

@@ -1664,7 +1664,7 @@ func runTestSubscribe(t *testing.T) {
 			},
 		}}
 
-	tests = tests[8:9]
+	//	tests = tests[8:9]
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
