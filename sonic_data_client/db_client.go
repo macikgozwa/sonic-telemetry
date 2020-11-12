@@ -173,13 +173,10 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 			c.w.Add(1)
 			c.synced.Add(1)
 			go streamSampleSubscription(sub, c)
-		} else if subMode == gnmipb.SubscriptionMode_ON_CHANGE {
+		} else {
 			c.w.Add(1)
 			c.synced.Add(1)
 			go streamOnChangeSubscription(sub, c)
-		} else {
-			enqueFatalMsg(c, fmt.Sprintf("unsupported subscription mode, %v", subMode))
-			return
 		}
 	}
 

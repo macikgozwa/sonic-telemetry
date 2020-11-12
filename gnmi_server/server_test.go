@@ -4,11 +4,21 @@ package gnmi
 // Prerequisite: redis-server should be running.
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"log"
+
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
 	"github.com/go-redis/redis"
 	"github.com/golang/protobuf/proto"
+
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"reflect"
+	"testing"
+	"time"
 
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
@@ -19,17 +29,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"reflect"
-	"testing"
-	"time"
+
 	// Register supported client types.
 	sdc "github.com/Azure/sonic-telemetry/sonic_data_client"
 	sdcfg "github.com/Azure/sonic-telemetry/sonic_db_config"
 	gclient "github.com/jipanyang/gnmi/client/gnmi"
-
 )
 
 var clientTypes = []string{gclient.Type}
@@ -121,7 +125,7 @@ func runTestGet(t *testing.T, ctx context.Context, gClient pb.GNMIClient, pathTa
 		t.Log("err: ", err)
 		t.Fatalf("got return code %v, want %v", gotRetStatus.Code(), wantRetCode)
 	}
-	
+
 	// Check response value
 	if valTest {
 		var gotVal interface{}
@@ -389,7 +393,7 @@ func prepareDbTranslib(t *testing.T) {
 	rclient := getRedisClient(t)
 	rclient.FlushDB()
 	rclient.Close()
-	
+
 	//Enable keysapce notification
 	os.Setenv("PATH", "/usr/bin:/sbin:/bin:/usr/local/bin")
 	cmd := exec.Command("redis-cli", "config", "set", "notify-keyspace-events", "KEA")
@@ -511,8 +515,6 @@ func TestGnmiSet(t *testing.T) {
 	}
 	s.s.Stop()
 }
-
-
 
 func TestGnmiGet(t *testing.T) {
 	//t.Log("Start server")
@@ -745,56 +747,56 @@ func TestGnmiGetTranslib(t *testing.T) {
 	}{
 
 		//These tests only work on the real switch platform, since they rely on files in the /proc and another running service
-	// 	{
-	// 	desc:       "Get OC Platform",
-	// 	pathTarget: "OC_YANG",
-	// 	textPbPath: `
- //                        elem: <name: "openconfig-platform:components" >
- //                `,
-	// 	wantRetCode: codes.OK,
-	// 	wantRespVal: emptyRespVal,
-	// 	valTest:     false,
-	// },
-	// 	{
-	// 		desc:       "Get OC System State",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "state" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System CPU",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "cpus" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System memory",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "memory" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System processes",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "processes" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
+		// 	{
+		// 	desc:       "Get OC Platform",
+		// 	pathTarget: "OC_YANG",
+		// 	textPbPath: `
+		//                        elem: <name: "openconfig-platform:components" >
+		//                `,
+		// 	wantRetCode: codes.OK,
+		// 	wantRespVal: emptyRespVal,
+		// 	valTest:     false,
+		// },
+		// 	{
+		// 		desc:       "Get OC System State",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "state" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System CPU",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "cpus" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System memory",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "memory" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System processes",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "processes" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
 		{
 			desc:       "Get OC Interfaces",
 			pathTarget: "OC_YANG",
@@ -1662,6 +1664,8 @@ func runTestSubscribe(t *testing.T) {
 			},
 		}}
 
+	tests = tests[0:1]
+
 	rclient := getRedisClient(t)
 	defer rclient.Close()
 	for _, tt := range tests {
@@ -1745,6 +1749,16 @@ func runTestSubscribe(t *testing.T) {
 }
 
 func TestGnmiSubscribe(t *testing.T) {
+	outfile, err := os.Create("/tmp/ut-logs.txt")
+	if err != nil {
+		panic(err)
+	}
+	defer outfile.Close()
+
+	writer := bufio.NewWriter(outfile)
+	defer writer.Flush()
+	log.SetOutput(writer)
+
 	s := createServer(t)
 	go runServer(t, s)
 
