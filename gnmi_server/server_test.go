@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"log"
+	"strings"
 
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
 	"github.com/go-redis/redis"
@@ -23,6 +25,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/ygot/ygot"
 
 	"github.com/openconfig/gnmi/value"
 
@@ -416,6 +419,58 @@ func prepareDbTranslib(t *testing.T) {
 		loadDBNotStrict(t, rclient, v)
 		rclient.Close()
 	}
+}
+
+func getType(t client.Type) pb.SubscriptionList_Mode {
+	switch t {
+	case client.Once:
+		return pb.SubscriptionList_ONCE
+	case client.Stream:
+		return pb.SubscriptionList_STREAM
+	case client.Poll:
+		return pb.SubscriptionList_POLL
+	}
+	return pb.SubscriptionList_ONCE
+}
+
+func pathToString(q client.Path) string {
+	qq := make(client.Path, len(q))
+	copy(qq, q)
+	// Escape all slashes within a path element. ygot.StringToPath will handle
+	// these escapes.
+	for i, e := range qq {
+		qq[i] = strings.Replace(e, "/", "\\/", -1)
+	}
+	return strings.Join(qq, "/")
+}
+
+func queryToSubscription(q client.Query) (*pb.SubscribeRequest, error) {
+	s := &pb.SubscribeRequest_Subscribe{
+		Subscribe: &pb.SubscriptionList{
+			Mode:   getType(q.Type),
+			Prefix: &pb.Path{Target: q.Target},
+		},
+	}
+	if q.UpdatesOnly {
+		s.Subscribe.UpdatesOnly = true
+	}
+	for _, qq := range q.Queries {
+		pp, err := ygot.StringToPath(pathToString(qq), ygot.StructuredPath, ygot.StringSlicePath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query path %q: %v", qq, err)
+		}
+		s.Subscribe.Subscription = append(s.Subscribe.Subscription, &pb.Subscription{Path: pp})
+	}
+	return &pb.SubscribeRequest{Request: s}, nil
+}
+
+func queryToSubscriptionOrFail(t *testing.T, q client.Query) *pb.SubscribeRequest {
+	sub, err := queryToSubscription(q)
+	if err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	return sub
 }
 
 func TestGnmiSet(t *testing.T) {
@@ -1234,38 +1289,15 @@ func runTestSubscribe(t *testing.T) {
 		{
 			desc: "stream query for table key Ethernet* with new test_field field on Ethernet68",
 			q: client.Query{
-				Target: "COUNTERS_DB",
-				Type:   client.Stream,
-				SubReq: &pb.SubscribeRequest{
-					Request: &pb.SubscribeRequest_Subscribe{
-						Subscribe: &pb.SubscriptionList{
-							Mode: pb.SubscriptionList_STREAM,
-							Prefix: &pb.Path{
-								Target: "COUNTERS_DB",
-							},
-							Subscription: []*pb.Subscription{
-								&pb.Subscription{
-									Mode: pb.SubscriptionMode_ON_CHANGE,
-									/*
-										Path: &pb.Path{
-											Elem: []*pb.PathElem{
-												&pb.PathElem{
-													Name: "COUNTERS",
-												},
-												&pb.PathElem{
-													Name: "Ethernet1/1",
-												},
-											},
-											Target: "COUNTERS_DB",
-										},
-									*/
-								},
-							},
-						},
-					},
-				},
-				// Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
-				TLS: &tls.Config{InsecureSkipVerify: true},
+				Type: client.Stream,
+				SubReq: queryToSubscriptionOrFail(t, client.Query{
+					Target:  "COUNTERS_DB",
+					Type:    client.Stream,
+					Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
+					TLS:     &tls.Config{InsecureSkipVerify: true},
+				}),
+				TLS:     &tls.Config{InsecureSkipVerify: true},
+				Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
 			},
 			updates: []tablePathValue{{
 				dbName:    "COUNTERS_DB",
@@ -1728,7 +1760,10 @@ func runTestSubscribe(t *testing.T) {
 				return nil
 			}
 			go func() {
-				c.Subscribe(context.Background(), q)
+				err := c.Subscribe(context.Background(), q)
+				if err != nil {
+					t.Logf("c.Subscribe err: %v", err)
+				}
 				/*
 					err := c.Subscribe(context.Background(), q)
 					t.Log("c.Subscribe err:", err)
