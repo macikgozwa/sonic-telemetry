@@ -473,6 +473,60 @@ func queryToSubscriptionOrFail(t *testing.T, q client.Query) *pb.SubscribeReques
 	return sub
 }
 
+type subscriptionQuery struct {
+	Query          []string
+	SubMode        pb.SubscriptionMode
+	SampleInterval uint64
+}
+
+func createQuery(subListMode pb.SubscriptionList_Mode, target string, queries []subscriptionQuery, updatesOnly bool) (*client.Query, error) {
+	s := &pb.SubscribeRequest_Subscribe{
+		Subscribe: &pb.SubscriptionList{
+			Mode:   subListMode,
+			Prefix: &pb.Path{Target: target},
+		},
+	}
+	if updatesOnly {
+		s.Subscribe.UpdatesOnly = true
+	}
+
+	for _, qq := range queries {
+		pp, err := ygot.StringToPath(pathToString(qq.Query), ygot.StructuredPath, ygot.StringSlicePath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query path %q: %v", qq, err)
+		}
+		s.Subscribe.Subscription = append(s.Subscribe.Subscription, &pb.Subscription{Path: pp, Mode: qq.SubMode})
+	}
+
+	subReq := &pb.SubscribeRequest{Request: s}
+	query, err := client.NewQuery(subReq)
+	query.TLS = &tls.Config{InsecureSkipVerify: true}
+	return &query, err
+}
+
+func createQueryOrFail(t *testing.T, subListMode pb.SubscriptionList_Mode, target string, queries []subscriptionQuery, updatesOnly bool) client.Query {
+	q, err := createQuery(subListMode, target, queries, updatesOnly)
+	if err != nil {
+		t.Fatalf("failed to create query: %v", err)
+	}
+
+	t.Logf("Created query: %v", *q)
+	return *q
+}
+
+func createCountersDBOnChangeQuery(t *testing.T, paths ...string) client.Query {
+	return createQueryOrFail(t,
+		pb.SubscriptionList_STREAM,
+		"COUNTERS_DB",
+		[]subscriptionQuery{
+			{
+				Query:   paths,
+				SubMode: pb.SubscriptionMode_ON_CHANGE,
+			},
+		},
+		false)
+}
+
 func TestGnmiSet(t *testing.T) {
 	if !READ_WRITE_MODE {
 		t.Skip("skipping test in read-only mode.")
@@ -1093,12 +1147,7 @@ func runTestSubscribe(t *testing.T) {
 		wantPollErr string
 	}{{
 		desc: "stream query for table COUNTERS_PORT_NAME_MAP with new test_field field",
-		q: client.Query{
-			Target:  "COUNTERS_DB",
-			Type:    client.Stream,
-			Queries: []client.Path{{"COUNTERS_PORT_NAME_MAP"}},
-			TLS:     &tls.Config{InsecureSkipVerify: true},
-		},
+		q:    createCountersDBOnChangeQuery(t, "COUNTERS_PORT_NAME_MAP"),
 		updates: []tablePathValue{{
 			dbName:    "COUNTERS_DB",
 			tableName: "COUNTERS_PORT_NAME_MAP",
@@ -1288,17 +1337,7 @@ func runTestSubscribe(t *testing.T) {
 	},
 		{
 			desc: "stream query for table key Ethernet* with new test_field field on Ethernet68",
-			q: client.Query{
-				Type: client.Stream,
-				SubReq: queryToSubscriptionOrFail(t, client.Query{
-					Target:  "COUNTERS_DB",
-					Type:    client.Stream,
-					Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
-					TLS:     &tls.Config{InsecureSkipVerify: true},
-				}),
-				TLS:     &tls.Config{InsecureSkipVerify: true},
-				Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
-			},
+			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet*"),
 			updates: []tablePathValue{{
 				dbName:    "COUNTERS_DB",
 				tableName: "COUNTERS",
@@ -1726,7 +1765,7 @@ func runTestSubscribe(t *testing.T) {
 			},
 		}}
 
-	tests = tests[7:8]
+	tests = tests[0:1]
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
