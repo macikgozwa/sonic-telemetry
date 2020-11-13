@@ -23,7 +23,10 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
+
 	"github.com/openconfig/gnmi/value"
+	"github.com/openconfig/ygot/ygot"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1232,10 +1235,40 @@ func runTestSubscribe(t *testing.T) {
 		{
 			desc: "stream query for table key Ethernet* with new test_field field on Ethernet68",
 			q: client.Query{
-				Target:  "COUNTERS_DB",
-				Type:    client.Stream,
-				Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
-				TLS:     &tls.Config{InsecureSkipVerify: true},
+				Target: "COUNTERS_DB",
+				Type:   client.Stream,
+				SubReq: &pb.SubscribeRequest{
+					Request: &pb.SubscribeRequest_Subscribe{
+						Subscribe: &pb.SubscriptionList{
+							Mode: pb.SubscriptionList_STREAM,
+							Prefix: &pb.Path{
+								Target: "COUNTERS_DB",
+							},
+							Subscription: []*pb.Subscription{
+								&pb.Subscription{
+									Mode: pb.SubscriptionMode_ON_CHANGE,
+									Path: 		pp, err := ygot.StringToPath(pathToString(qq), ygot.StructuredPath, ygot.StringSlicePath)
+
+									/*
+									Path: &pb.Path{
+										Elem: []*pb.PathElem{
+											&pb.PathElem{
+												Name: "COUNTERS",
+											},
+											&pb.PathElem{
+												Name: "Ethernet1/1",
+											},
+										},
+										Target: "COUNTERS_DB",
+									},
+									*/
+								},
+							},
+						},
+					},
+				},
+				// Queries: []client.Path{{"COUNTERS", "Ethernet*"}},
+				TLS: &tls.Config{InsecureSkipVerify: true},
 			},
 			updates: []tablePathValue{{
 				dbName:    "COUNTERS_DB",
@@ -1664,7 +1697,7 @@ func runTestSubscribe(t *testing.T) {
 			},
 		}}
 
-	//	tests = tests[8:9]
+	tests = tests[7:8]
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()

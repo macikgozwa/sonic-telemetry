@@ -6,7 +6,9 @@ package telemetry_dialout
 import (
 	"crypto/tls"
 	"encoding/json"
+
 	"github.com/go-redis/redis"
+
 	//"github.com/golang/protobuf/proto"
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/openconfig/gnmi/value"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+
 	//"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	//"google.golang.org/grpc/status"
@@ -444,6 +447,8 @@ func TestGNMIDialOutPublish(t *testing.T) {
 		},
 	}}
 
+	tests = tests[0:1]
+
 	rclient := getRedisClient(t)
 	defer rclient.Close()
 	for _, tt := range tests {
@@ -464,6 +469,7 @@ func TestGNMIDialOutPublish(t *testing.T) {
 			time.Sleep(time.Millisecond * 500)
 			serverOp(t, tt.sop)
 			for _, update := range tt.updates {
+				t.Logf("recevied update: %v", update)
 				switch update.op {
 				case "hdel":
 					rclient.HDel(update.tableName+update.delimitor+update.tableKey, update.field)
