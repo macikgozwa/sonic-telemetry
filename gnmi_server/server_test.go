@@ -25,7 +25,6 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 
 	"github.com/openconfig/gnmi/value"
-	"github.com/openconfig/ygot/ygot"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -1247,20 +1246,18 @@ func runTestSubscribe(t *testing.T) {
 							Subscription: []*pb.Subscription{
 								&pb.Subscription{
 									Mode: pb.SubscriptionMode_ON_CHANGE,
-									Path: 		pp, err := ygot.StringToPath(pathToString(qq), ygot.StructuredPath, ygot.StringSlicePath)
-
 									/*
-									Path: &pb.Path{
-										Elem: []*pb.PathElem{
-											&pb.PathElem{
-												Name: "COUNTERS",
+										Path: &pb.Path{
+											Elem: []*pb.PathElem{
+												&pb.PathElem{
+													Name: "COUNTERS",
+												},
+												&pb.PathElem{
+													Name: "Ethernet1/1",
+												},
 											},
-											&pb.PathElem{
-												Name: "Ethernet1/1",
-											},
+											Target: "COUNTERS_DB",
 										},
-										Target: "COUNTERS_DB",
-									},
 									*/
 								},
 							},
