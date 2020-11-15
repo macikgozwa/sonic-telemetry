@@ -4,11 +4,10 @@ package gnmi
 // Prerequisite: redis-server should be running.
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"log"
 	"strings"
 
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
@@ -22,12 +21,12 @@ import (
 	"testing"
 	"time"
 
+	glog "github.com/golang/glog"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
-	"github.com/openconfig/ygot/ygot"
-
 	"github.com/openconfig/gnmi/value"
+	"github.com/openconfig/ygot/ygot"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -495,7 +494,13 @@ func createQuery(subListMode pb.SubscriptionList_Mode, target string, queries []
 		if err != nil {
 			return nil, fmt.Errorf("invalid query path %q: %v", qq, err)
 		}
-		s.Subscribe.Subscription = append(s.Subscribe.Subscription, &pb.Subscription{Path: pp, Mode: qq.SubMode})
+		s.Subscribe.Subscription = append(
+			s.Subscribe.Subscription,
+			&pb.Subscription{
+				Path:           pp,
+				Mode:           qq.SubMode,
+				SampleInterval: qq.SampleInterval,
+			})
 	}
 
 	subReq := &pb.SubscribeRequest{Request: s}
@@ -510,11 +515,10 @@ func createQueryOrFail(t *testing.T, subListMode pb.SubscriptionList_Mode, targe
 		t.Fatalf("failed to create query: %v", err)
 	}
 
-	t.Logf("Created query: %v", *q)
 	return *q
 }
 
-func createCountersDBOnChangeQuery(t *testing.T, paths ...string) client.Query {
+func createCountersDbQueryOnChangeMode(t *testing.T, paths ...string) client.Query {
 	return createQueryOrFail(t,
 		pb.SubscriptionList_STREAM,
 		"COUNTERS_DB",
@@ -522,6 +526,21 @@ func createCountersDBOnChangeQuery(t *testing.T, paths ...string) client.Query {
 			{
 				Query:   paths,
 				SubMode: pb.SubscriptionMode_ON_CHANGE,
+			},
+		},
+		false)
+}
+
+func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths ...string) client.Query {
+	t.Logf("%v %v", interval, uint64(interval.Nanoseconds()))
+	return createQueryOrFail(t,
+		pb.SubscriptionList_STREAM,
+		"COUNTERS_DB",
+		[]subscriptionQuery{
+			{
+				Query:          paths,
+				SubMode:        pb.SubscriptionMode_SAMPLE,
+				SampleInterval: uint64(interval.Nanoseconds()),
 			},
 		},
 		false)
@@ -1148,7 +1167,7 @@ func runTestSubscribe(t *testing.T) {
 	}{
 		{
 			desc: "stream query for table COUNTERS_PORT_NAME_MAP with new test_field field",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS_PORT_NAME_MAP"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS_PORT_NAME_MAP"),
 			updates: []tablePathValue{{
 				dbName:    "COUNTERS_DB",
 				tableName: "COUNTERS_PORT_NAME_MAP",
@@ -1164,7 +1183,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for table key Ethernet68 with new test_field field",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1191,7 +1210,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "(use vendor alias) stream query for table key Ethernet68/1 with new test_field field",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68/1"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68/1"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1219,7 +1238,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with update of field value",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1247,7 +1266,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "(use vendor alias) stream query for COUNTERS/[Ethernet68/1]/SAI_PORT_STAT_PFC_7_RX_PKTS with update of field value",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1275,7 +1294,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for COUNTERS/Ethernet68/Pfcwd with update of field value",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68", "Pfcwd"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68", "Pfcwd"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1303,7 +1322,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "(use vendor alias) stream query for COUNTERS/[Ethernet68/1]/Pfcwd with update of field value",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet68/1", "Pfcwd"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet68/1", "Pfcwd"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1331,7 +1350,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for table key Ethernet* with new test_field field on Ethernet68",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet*"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet*"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1365,7 +1384,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for table key Ethernet*/SAI_PORT_STAT_PFC_7_RX_PKTS with field value update",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1391,7 +1410,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc: "stream query for table key Ethernet*/Pfcwd with field value update",
-			q:    createCountersDBOnChangeQuery(t, "COUNTERS", "Ethernet*", "Pfcwd"),
+			q:    createCountersDbQueryOnChangeMode(t, "COUNTERS", "Ethernet*", "Pfcwd"),
 			updates: []tablePathValue{
 				{
 					dbName:    "COUNTERS_DB",
@@ -1930,11 +1949,29 @@ func runTestSubscribe(t *testing.T) {
 				client.Sync{},
 			},
 		},
+		{
+			desc: "use invalid sample interval",
+			q:    createCountersDbQuerySampleMode(t, 10*time.Millisecond, "COUNTERS", "Ethernet1"),
+			updates: []tablePathValue{
+				{
+					dbName:    "COUNTERS_DB",
+					tableName: "COUNTERS",
+					tableKey:  "oid:0x1500000000091c", // "Ethernet68:1": "oid:0x1500000000091c",
+					delimitor: ":",
+					field:     "SAI_QUEUE_STAT_DROPPED_PACKETS",
+					value:     "4", // being changed to 0 from 4
+				},
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.NewError("an error"),
+			},
+		},
 	}
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
-	for _, tt := range tests {
+	for _, tt := range tests[len(tests)-1:] {
 		prepareDb(t)
 		// Extra db preparation for this test case
 		for _, prepare := range tt.prepares {
@@ -1953,7 +1990,7 @@ func runTestSubscribe(t *testing.T) {
 			defer c.Close()
 			var gotNoti []client.Notification
 			q.NotificationHandler = func(n client.Notification) error {
-				//t.Logf("reflect.TypeOf(n) %v :  %v", reflect.TypeOf(n), n)
+				// t.Logf("reflect.TypeOf(n) %v :  %v", reflect.TypeOf(n), n)
 				if nn, ok := n.(client.Update); ok {
 					nn.TS = time.Unix(0, 200)
 					gotNoti = append(gotNoti, nn)
@@ -2018,15 +2055,11 @@ func runTestSubscribe(t *testing.T) {
 }
 
 func TestGnmiSubscribe(t *testing.T) {
-	outfile, err := os.Create("/tmp/ut-logs.txt")
-	if err != nil {
-		panic(err)
-	}
-	defer outfile.Close()
-
-	writer := bufio.NewWriter(outfile)
-	defer writer.Flush()
-	log.SetOutput(writer)
+	// flag.Lookup("logtostderr").Value.Set("true")
+	flag.Lookup("v").Value.Set("10")
+	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
+	defer glog.Flush()
+	glog.Info("Starting...")
 
 	s := createServer(t)
 	go runServer(t, s)
