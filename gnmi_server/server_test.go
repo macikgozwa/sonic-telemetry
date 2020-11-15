@@ -1155,12 +1155,13 @@ func runTestSubscribe(t *testing.T) {
 	countersEthernet68QueuesAliasJsonUpdate["Ethernet68/1:1"] = eth68_1
 
 	tests := []struct {
-		desc     string
-		q        client.Query
-		prepares []tablePathValue
-		updates  []tablePathValue
-		wantErr  bool
-		wantNoti []client.Notification
+		desc       string
+		q          client.Query
+		prepares   []tablePathValue
+		updates    []tablePathValue
+		wantErr    bool
+		wantNoti   []client.Notification
+		wantSubErr error
 
 		poll        int
 		wantPollErr string
@@ -1950,22 +1951,11 @@ func runTestSubscribe(t *testing.T) {
 			},
 		},
 		{
-			desc: "use invalid sample interval",
-			q:    createCountersDbQuerySampleMode(t, 10*time.Millisecond, "COUNTERS", "Ethernet1"),
-			updates: []tablePathValue{
-				{
-					dbName:    "COUNTERS_DB",
-					tableName: "COUNTERS",
-					tableKey:  "oid:0x1500000000091c", // "Ethernet68:1": "oid:0x1500000000091c",
-					delimitor: ":",
-					field:     "SAI_QUEUE_STAT_DROPPED_PACKETS",
-					value:     "4", // being changed to 0 from 4
-				},
-			},
-			wantNoti: []client.Notification{
-				client.Connected{},
-				client.NewError("an error"),
-			},
+			desc:       "use invalid sample interval",
+			q:          createCountersDbQuerySampleMode(t, 10*time.Millisecond, "COUNTERS", "Ethernet1"),
+			updates:    []tablePathValue{},
+			wantSubErr: fmt.Errorf("rpc error: code = InvalidArgument desc = invalid interval: 10ms. It cannot be less than %v", sdc.MinSampleInterval),
+			wantNoti:   []client.Notification{},
 		},
 	}
 
@@ -2002,8 +1992,8 @@ func runTestSubscribe(t *testing.T) {
 			}
 			go func() {
 				err := c.Subscribe(context.Background(), q)
-				if err != nil {
-					t.Logf("c.Subscribe err: %v", err)
+				if tt.wantSubErr != nil && tt.wantSubErr.Error() != err.Error() {
+					t.Errorf("c.Subscribe expected %v, got %v", tt.wantSubErr, err)
 				}
 				/*
 					err := c.Subscribe(context.Background(), q)
