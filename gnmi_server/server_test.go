@@ -595,7 +595,7 @@ func mergeMaps(sourceOrigin interface{}, updateOrigin interface{}) interface{} {
 				sourceStrMap[itemKey] = mergeMaps(sourceItem, updateItem)
 			}
 		}
-		return sourceStrMap
+		return update
 	}
 
 	return update
