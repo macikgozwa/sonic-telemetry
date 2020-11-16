@@ -563,6 +563,44 @@ func createIntervalTickerUpdate() tablePathValue {
 	}
 }
 
+func cloneObject(obj interface{}) interface{} {
+	objData, err := json.Marshal(obj)
+	if err != nil {
+		panic(fmt.Errorf("marshal failed, %v", err))
+	}
+
+	var cloneObj interface{}
+	err = json.Unmarshal(objData, &cloneObj)
+	if err != nil {
+		panic(fmt.Errorf("unmarshal failed, %v", err))
+	}
+
+	return cloneObj
+}
+
+func mergeMaps(sourceOrigin interface{}, updateOrigin interface{}) interface{} {
+	// Clone the maps so that the originals are not changed during the merge.
+	source := cloneObject(sourceOrigin)
+	update := cloneObject(updateOrigin)
+
+	// Check if both are string keyed maps
+	sourceStrMap, okSrcMap := source.(map[string]interface{})
+	updateStrMap, okUpdateMap := update.(map[string]interface{})
+	if okSrcMap && okUpdateMap {
+		for itemKey, updateItem := range updateStrMap {
+			sourceItem, sourceItemOk := sourceStrMap[itemKey]
+			if sourceItemOk {
+				sourceStrMap[itemKey] = updateItem
+			} else {
+				sourceStrMap[itemKey] = mergeMaps(sourceItem, updateItem)
+			}
+		}
+		return sourceStrMap
+	}
+
+	return update
+}
+
 func TestGnmiSet(t *testing.T) {
 	if !READ_WRITE_MODE {
 		t.Skip("skipping test in read-only mode.")
@@ -1852,12 +1890,28 @@ func runTestSubscribe(t *testing.T) {
 				client.Update{Path: []string{"COUNTERS", "Ethernet68/1"}, TS: time.Unix(0, 200), Val: countersEthernet68JsonUpdate},
 			},
 		},
+		{
+			desc:              "sample stream query for COUNTERS/Ethernet68/Pfcwd with update of field value",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "Pfcwd"),
+			generateIntervals: true,
+			updates: []tablePathValue{
+				createCountersTableUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+				createCountersTableUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernet68PfcwdJson, countersEthernet68PfcwdJsonUpdate)},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernet68PfcwdJson, countersEthernet68PfcwdJsonUpdate)},
+			},
+		},
 	}
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
-	//for _, tt := range tests[4:5] {
-	for _, tt := range tests {
+	for _, tt := range tests[22:] {
+		// for _, tt := range tests {
 		prepareDb(t)
 		// Extra db preparation for this test case
 		for _, prepare := range tt.prepares {
