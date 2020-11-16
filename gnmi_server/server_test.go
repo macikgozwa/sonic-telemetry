@@ -546,7 +546,7 @@ func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths
 		false)
 }
 
-func createCountersTableValue(tableKey string, fieldName string, fieldValue string) tablePathValue {
+func createCountersTableUpdate(tableKey string, fieldName string, fieldValue string) tablePathValue {
 	return tablePathValue{
 		dbName:    "COUNTERS_DB",
 		tableName: "COUNTERS",
@@ -557,9 +557,9 @@ func createCountersTableValue(tableKey string, fieldName string, fieldValue stri
 	}
 }
 
-func createNoChangeTicker() tablePathValue {
+func createIntervalTickerUpdate() tablePathValue {
 	return tablePathValue{
-		op: "none",
+		op: "intervaltick",
 	}
 }
 
@@ -1183,7 +1183,7 @@ func runTestSubscribe(t *testing.T) {
 		poll        int
 		wantPollErr string
 
-		sampleMode bool
+		generateIntervals bool
 	}{
 		{
 			desc: "stream query for table COUNTERS_PORT_NAME_MAP with new test_field field",
@@ -1196,17 +1196,9 @@ func runTestSubscribe(t *testing.T) {
 			}},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS_PORT_NAME_MAP"},
-					TS:   time.Unix(0, 200),
-					Val:  countersPortNameMapJson,
-				},
+				client.Update{Path: []string{"COUNTERS_PORT_NAME_MAP"}, TS: time.Unix(0, 200), Val: countersPortNameMapJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS_PORT_NAME_MAP"},
-					TS:   time.Unix(0, 200),
-					Val:  countersPortNameMapJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS_PORT_NAME_MAP"}, TS: time.Unix(0, 200), Val: countersPortNameMapJsonUpdate},
 			},
 		},
 		{
@@ -1400,15 +1392,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200), Val: countersEthernetWildcardJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200), Val: countersEtherneWildcardJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEtherneWildcardJsonUpdate},
 			},
 		},
 		{
@@ -1426,15 +1412,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200), Val: countersEthernetWildcardPfcJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardPfcJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200), Val: singlePortPfcJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: singlePortPfcJsonUpdate},
 			},
 		},
 		{
@@ -1452,17 +1432,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildPfcwdJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdAliasJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasJsonUpdate},
 			},
 		},
 		{
@@ -1552,29 +1524,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "2",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "2"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
 			},
 		},
@@ -1599,28 +1555,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "2"},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "2"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  "4",
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: "4"},
 				client.Sync{},
 			},
 		},
@@ -1645,29 +1586,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdPollUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdPollUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdPollUpdate},
 				client.Sync{},
 			},
 		},
@@ -1692,29 +1617,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdAliasJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdAliasPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasPollUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdAliasPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasPollUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68PfcwdAliasPollUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasPollUpdate},
 				client.Sync{},
 			},
 		},
@@ -1739,29 +1648,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildcardJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200),
-					Val:  countersFieldUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersFieldUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200),
-					Val:  countersFieldUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersFieldUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*"},
-					TS:   time.Unix(0, 200),
-					Val:  countersFieldUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersFieldUpdate},
 				client.Sync{},
 			},
 		},
@@ -1786,29 +1679,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildcardPfcJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardPfcJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  allPortPfcJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: allPortPfcJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  allPortPfcJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: allPortPfcJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"},
-					TS:   time.Unix(0, 200),
-					Val:  allPortPfcJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: allPortPfcJsonUpdate},
 				client.Sync{},
 			},
 		},
@@ -1833,29 +1710,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildPfcwdJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildPfcwdUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildPfcwdUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildPfcwdUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdUpdate},
 				client.Sync{},
 			},
 		},
@@ -1870,17 +1731,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildQueuesJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernetWildQueuesJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet*", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernetWildQueuesJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernetWildQueuesJson},
 				client.Sync{},
 			},
 		},
@@ -1905,29 +1758,13 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesJsonUpdate},
 				client.Sync{},
 			},
 		},
@@ -1952,46 +1789,28 @@ func runTestSubscribe(t *testing.T) {
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesAliasJson,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesAliasJson},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesAliasJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesAliasJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesAliasJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesAliasJsonUpdate},
 				client.Sync{},
-				client.Update{
-					Path: []string{"COUNTERS", "Ethernet68/1", "Queues"},
-					TS:   time.Unix(0, 200),
-					Val:  countersEthernet68QueuesAliasJsonUpdate,
-				},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Queues"}, TS: time.Unix(0, 200), Val: countersEthernet68QueuesAliasJsonUpdate},
 				client.Sync{},
 			},
 		},
 		{
 			desc:       "use invalid sample interval",
 			q:          createCountersDbQuerySampleMode(t, 10*time.Millisecond, "COUNTERS", "Ethernet1"),
-			sampleMode: true,
 			updates:    []tablePathValue{},
 			wantSubErr: fmt.Errorf("rpc error: code = InvalidArgument desc = invalid interval: 10ms. It cannot be less than %v", sdc.MinSampleInterval),
 			wantNoti:   []client.Notification{},
 		},
 		{
-			desc:       "sample stream query for table key Ethernet68 with new test_field field",
-			q:          createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
-			sampleMode: true,
+			desc: "sample stream query for table key Ethernet68 with new test_field field",
+			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
 			updates: []tablePathValue{
-				createCountersTableValue("oid:0x1000000000039", "test_field", "test_value"),
+				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
@@ -2001,12 +1820,11 @@ func runTestSubscribe(t *testing.T) {
 			},
 		},
 		{
-			desc:       "sample stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with 2 updates",
-			q:          createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
-			sampleMode: true,
+			desc: "sample stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with 2 updates",
+			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			updates: []tablePathValue{
-				createCountersTableValue("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
-				createNoChangeTicker(), // no value change but imitate interval ticker
+				createCountersTableUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
+				createIntervalTickerUpdate(), // no value change but imitate interval ticker
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
@@ -2017,12 +1835,11 @@ func runTestSubscribe(t *testing.T) {
 			},
 		},
 		{
-			desc:       "(use vendor alias) sample stream query for table key Ethernet68/1 with new test_field field",
-			q:          createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
-			sampleMode: true,
+			desc: "(use vendor alias) sample stream query for table key Ethernet68/1 with new test_field field",
+			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
 			updates: []tablePathValue{
-				createCountersTableValue("oid:0x1000000000039", "test_field", "test_value"),
-				createCountersTableValue("oid:0x1000000000039", "test_field", "test_value"),
+				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
+				createIntervalTickerUpdate(), // no value change but imitate interval ticker
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
@@ -2036,8 +1853,8 @@ func runTestSubscribe(t *testing.T) {
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
-	for _, tt := range tests[22:] {
-		// for _, tt := range tests {
+	//for _, tt := range tests[4:5] {
+	for _, tt := range tests {
 		prepareDb(t)
 		// Extra db preparation for this test case
 		for _, prepare := range tt.prepares {
@@ -2050,7 +1867,7 @@ func runTestSubscribe(t *testing.T) {
 		}
 
 		intervalTickerChan := make(chan time.Time)
-		if tt.sampleMode {
+		if tt.generateIntervals {
 			sdc.IntervalTicker = func(interval time.Duration) <-chan time.Time {
 				return intervalTickerChan
 			}
@@ -2064,7 +1881,6 @@ func runTestSubscribe(t *testing.T) {
 			defer c.Close()
 			var gotNoti []client.Notification
 			q.NotificationHandler = func(n client.Notification) error {
-				// t.Logf("reflect.TypeOf(n) %v :  %v", reflect.TypeOf(n), n)
 				if nn, ok := n.(client.Update); ok {
 					nn.TS = time.Unix(0, 200)
 					gotNoti = append(gotNoti, nn)
@@ -2098,15 +1914,15 @@ func runTestSubscribe(t *testing.T) {
 				switch update.op {
 				case "hdel":
 					rclient.HDel(update.tableName+update.delimitor+update.tableKey, update.field)
-				case "none":
-					break
+				case "intervaltick":
+					// This is not a DB update but a request to trigger sample interval
 				default:
 					rclient.HSet(update.tableName+update.delimitor+update.tableKey, update.field, update.value)
 				}
 
 				time.Sleep(time.Millisecond * 1000)
 
-				if tt.sampleMode {
+				if tt.generateIntervals {
 					intervalTickerChan <- time.Now()
 				}
 			}
