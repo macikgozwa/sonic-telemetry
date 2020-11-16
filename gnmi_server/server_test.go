@@ -1807,8 +1807,9 @@ func runTestSubscribe(t *testing.T) {
 			wantNoti:   []client.Notification{},
 		},
 		{
-			desc: "sample stream query for table key Ethernet68 with new test_field field",
-			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
+			desc:              "sample stream query for table key Ethernet68 with new test_field field",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
+			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
 			},
@@ -1820,8 +1821,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 		},
 		{
-			desc: "sample stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with 2 updates",
-			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			desc:              "sample stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with 2 updates",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
 				createIntervalTickerUpdate(), // no value change but imitate interval ticker
@@ -1835,8 +1837,9 @@ func runTestSubscribe(t *testing.T) {
 			},
 		},
 		{
-			desc: "(use vendor alias) sample stream query for table key Ethernet68/1 with new test_field field",
-			q:    createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
+			desc:              "(use vendor alias) sample stream query for table key Ethernet68/1 with new test_field field",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
+			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
 				createIntervalTickerUpdate(), // no value change but imitate interval ticker
