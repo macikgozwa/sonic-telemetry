@@ -64,7 +64,15 @@ var UseRedisLocalTcpPort bool = false
 // redis client connected to each DB
 var Target2RedisDb = make(map[string]*redis.Client)
 
+// MinSampleInterval is the lowest sampling interval for streaming subscriptions.
+// Any non-zero value that less than this threshold is considered invalid argument.
 var MinSampleInterval = time.Second
+
+// IntervalTicker is a factory method to implement interval ticking.
+// Exposed for UT purposes.
+var IntervalTicker = func(interval time.Duration) <-chan time.Time {
+	return time.After(interval)
+}
 
 type tablePath struct {
 	dbName    string
@@ -864,7 +872,7 @@ func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant bool,
 		case <-c.channel:
 			log.V(1).Infof("Stopping dbFieldSubscribe routine for Client %s ", c)
 			return
-		case <-time.After(interval):
+		case <-IntervalTicker(interval):
 			newVal := readVal()
 
 			if supressRedundant == false || newVal != val {
@@ -890,6 +898,8 @@ func dbSingleTableKeySubscribe(rsd redisSubData, c *DbClient, updateChannel chan
 	pubsub := rsd.pubsub
 	prefixLen := rsd.prefixLen
 	msi := make(map[string]interface{})
+
+	log.V(2).Infof("Starting dbSingleTableKeySubscribe routine for %+v", tblPath)
 
 	for {
 		select {
@@ -1077,7 +1087,7 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 		// The interval ticker ticks only when the interval is non-zero.
 		// Otherwise (e.g. on-change mode) it would never tick.
 		if interval > 0 {
-			intervalTicker = time.After(interval)
+			intervalTicker = IntervalTicker(interval)
 		}
 
 		select {
@@ -1096,6 +1106,8 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 				}
 			}
 		case <-intervalTicker:
+			log.V(1).Infof("ticker received: %v", msiAll)
+
 			if err := sendMsiData(msiAll); err != nil {
 				handleFatalMsg(err.Error())
 				return
