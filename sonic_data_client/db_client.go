@@ -171,25 +171,38 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 	c.q = q
 	c.channel = stop
 
-	log.V(2).Infof("Stream subscription request received, mode: %v, subscription count: %v",
-		subscribe.GetMode(),
-		len(subscribe.GetSubscription()))
-
-	for _, sub := range subscribe.GetSubscription() {
-		log.V(2).Infof("Sub mode: %v, path: %v", sub.GetMode(), sub.GetPath())
-		subMode := sub.GetMode()
-
-		if subMode == gnmipb.SubscriptionMode_SAMPLE {
+	if subscribe.GetSubscription() == nil {
+		log.V(2).Infof("No incoming subscription, it is considered a dialout connection.")
+		// NOTE: per https://github.com/Azure/sonic-telemetry/blob/master/doc/dialout.md#dialout_client_cli-and-dialout_server_cli
+		// TELEMETRY_CLIENT subscription doesn't specificy type of the stream.
+		// Handling it as a ON_CHANGE stream for backward compatibility.
+		// TODO: We need to decide wheter this should be ON_CHANGE or SAMPLE
+		for gnmiPath := range c.pathG2S {
 			c.w.Add(1)
 			c.synced.Add(1)
-			go streamSampleSubscription(sub, c)
-		} else if subMode == gnmipb.SubscriptionMode_ON_CHANGE {
-			c.w.Add(1)
-			c.synced.Add(1)
-			go streamOnChangeSubscription(sub, c)
-		} else {
-			enqueFatalMsg(c, fmt.Sprintf("unsupported subscription mode, %v", subMode))
-			return
+			go streamOnChangeSubscription(gnmiPath, c)
+		}
+	} else {
+		log.V(2).Infof("Stream subscription request received, mode: %v, subscription count: %v",
+			subscribe.GetMode(),
+			len(subscribe.GetSubscription()))
+
+		for _, sub := range subscribe.GetSubscription() {
+			log.V(2).Infof("Sub mode: %v, path: %v", sub.GetMode(), sub.GetPath())
+			subMode := sub.GetMode()
+
+			if subMode == gnmipb.SubscriptionMode_SAMPLE {
+				c.w.Add(1)
+				c.synced.Add(1)
+				go streamSampleSubscription(sub, c)
+			} else if subMode == gnmipb.SubscriptionMode_ON_CHANGE {
+				c.w.Add(1)
+				c.synced.Add(1)
+				go streamOnChangeSubscription(sub.GetPath(), c)
+			} else {
+				enqueFatalMsg(c, fmt.Sprintf("unsupported subscription mode, %v", subMode))
+				return
+			}
 		}
 	}
 
@@ -210,10 +223,9 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 }
 
 // streamOnChangeSubscription implemets Subscription "ON_CHANGE STREAM" mode
-func streamOnChangeSubscription(sub *gnmipb.Subscription, c *DbClient) {
-	gnmiPath := sub.GetPath()
+func streamOnChangeSubscription(gnmiPath *gnmipb.Path, c *DbClient) {
 	tblPaths := c.pathG2S[gnmiPath]
-	log.V(2).Infof("%v, %v", gnmiPath, tblPaths[0].field)
+	log.V(2).Infof("streamOnChangeSubscription gnmiPath: %v", gnmiPath)
 
 	if tblPaths[0].field != "" {
 		if len(tblPaths) > 1 {
@@ -236,15 +248,17 @@ func streamSampleSubscription(sub *gnmipb.Subscription, c *DbClient) {
 		return
 	}
 
-	tblPaths := c.pathG2S[sub.GetPath()]
+	gnmiPath := sub.GetPath()
+	tblPaths := c.pathG2S[gnmiPath]
+	log.V(2).Infof("streamSampleSubscription gnmiPath: %v", gnmiPath)
 	if tblPaths[0].field != "" {
 		if len(tblPaths) > 1 {
-			dbFieldMultiSubscribe(sub.GetPath(), c, false, samplingInterval)
+			dbFieldMultiSubscribe(gnmiPath, c, false, samplingInterval)
 		} else {
-			dbFieldSubscribe(sub.GetPath(), c, false, samplingInterval)
+			dbFieldSubscribe(gnmiPath, c, false, samplingInterval)
 		}
 	} else {
-		dbTableKeySubscribe(sub.GetPath(), c, samplingInterval)
+		dbTableKeySubscribe(gnmiPath, c, samplingInterval)
 	}
 }
 
