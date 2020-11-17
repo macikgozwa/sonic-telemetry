@@ -489,7 +489,7 @@ func createCountersDbQueryOnChangeMode(t *testing.T, paths ...string) client.Que
 		false)
 }
 
-func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths ...string) client.Query {
+func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, updateOnly bool, paths ...string) client.Query {
 	return createQueryOrFail(t,
 		pb.SubscriptionList_STREAM,
 		"COUNTERS_DB",
@@ -500,7 +500,7 @@ func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths
 				SampleInterval: uint64(interval.Nanoseconds()),
 			},
 		},
-		false)
+		updateOnly)
 }
 
 func createCountersTableSetUpdate(tableKey string, fieldName string, fieldValue string) tablePathValue {
@@ -1808,14 +1808,14 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:       "use invalid sample interval",
-			q:          createCountersDbQuerySampleMode(t, 10*time.Millisecond, "COUNTERS", "Ethernet1"),
+			q:          createCountersDbQuerySampleMode(t, 10*time.Millisecond, false, "COUNTERS", "Ethernet1"),
 			updates:    []tablePathValue{},
 			wantSubErr: fmt.Errorf("rpc error: code = InvalidArgument desc = invalid interval: 10ms. It cannot be less than %v", sdc.MinSampleInterval),
 			wantNoti:   []client.Notification{},
 		},
 		{
 			desc:              "sample stream query for table key Ethernet68 with new test_field field",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet68"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
@@ -1829,7 +1829,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:              "sample stream query for COUNTERS/Ethernet68/SAI_PORT_STAT_PFC_7_RX_PKTS with 2 updates",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
@@ -1845,7 +1845,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:              "(use vendor alias) sample stream query for table key Ethernet68/1 with new test_field field",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet68/1"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
@@ -1861,7 +1861,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:              "sample stream query for COUNTERS/Ethernet68/Pfcwd with update of field value",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "Pfcwd"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet68", "Pfcwd"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
@@ -1877,7 +1877,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:              "(use vendor alias) sample stream query for COUNTERS/[Ethernet68/1]/Pfcwd with update of field value",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1", "Pfcwd"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet68/1", "Pfcwd"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
@@ -1893,7 +1893,7 @@ func runTestSubscribe(t *testing.T) {
 		},
 		{
 			desc:              "sample stream query for table key Ethernet* with new test_field field on Ethernet68",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet*"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
@@ -1905,11 +1905,29 @@ func runTestSubscribe(t *testing.T) {
 				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildcardJson, countersEtherneWildcardJsonUpdate)},
 			},
 		},
+		{
+			desc:              "(updates only) sample stream query for table key Ethernet* with new test_field field on Ethernet68",
+			q:                 createCountersDbQuerySampleMode(t, 0, true, "COUNTERS", "Ethernet*"),
+			generateIntervals: true,
+			updates: []tablePathValue{
+				createIntervalTickerUpdate(), // no value change but imitate interval ticker
+				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
+				createIntervalTickerUpdate(),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: map[string]interface{}{}}, //empty update
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEtherneWildcardJsonUpdate},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: map[string]interface{}{}}, //empty update
+			},
+		},
 		/*
 			// deletion of field from table is not supported. It'd keep sending the last value before the deletion.
 				{
 					desc:              "sample stream query for table key Ethernet* with new test_field field deleted from Ethernet68",
-					q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*"),
+					q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet*"),
 					generateIntervals: true,
 					updates: []tablePathValue{
 						createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
@@ -1926,7 +1944,7 @@ func runTestSubscribe(t *testing.T) {
 		*/
 		{
 			desc:              "sample stream query for table key Ethernet*/SAI_PORT_STAT_PFC_7_RX_PKTS with field value update",
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			generateIntervals: true,
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "4"),
@@ -1941,7 +1959,7 @@ func runTestSubscribe(t *testing.T) {
 		{
 			desc:              "sample stream query for table key Ethernet*/Pfcwd with field value update",
 			generateIntervals: true,
-			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*", "Pfcwd"),
+			q:                 createCountersDbQuerySampleMode(t, 0, false, "COUNTERS", "Ethernet*", "Pfcwd"),
 			updates: []tablePathValue{
 				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
 			},
@@ -1952,11 +1970,28 @@ func runTestSubscribe(t *testing.T) {
 				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildPfcwdJson, countersEthernet68PfcwdAliasJsonUpdate)},
 			},
 		},
+		{
+			desc:              "(update only) sample stream query for table key Ethernet*/Pfcwd with field value update",
+			generateIntervals: true,
+			q:                 createCountersDbQuerySampleMode(t, 0, true, "COUNTERS", "Ethernet*", "Pfcwd"),
+			updates: []tablePathValue{
+				createIntervalTickerUpdate(),
+				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+				createIntervalTickerUpdate(),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: map[string]interface{}{}}, //empty update
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasJsonUpdate},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: map[string]interface{}{}}, //empty update
+			},
+		},
 	}
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
-	//for _, tt := range tests[22:] {
 	for _, tt := range tests {
 		prepareDb(t)
 		// Extra db preparation for this test case

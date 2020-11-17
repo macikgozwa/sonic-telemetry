@@ -180,7 +180,7 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 		for gnmiPath := range c.pathG2S {
 			c.w.Add(1)
 			c.synced.Add(1)
-			go streamOnChangeSubscription(gnmiPath, c)
+			go streamOnChangeSubscription(c, gnmiPath)
 		}
 	} else {
 		log.V(2).Infof("Stream subscription request received, mode: %v, subscription count: %v",
@@ -194,11 +194,11 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 			if subMode == gnmipb.SubscriptionMode_SAMPLE {
 				c.w.Add(1)
 				c.synced.Add(1)
-				go streamSampleSubscription(sub, c)
+				go streamSampleSubscription(c, sub, subscribe.GetUpdatesOnly())
 			} else if subMode == gnmipb.SubscriptionMode_ON_CHANGE {
 				c.w.Add(1)
 				c.synced.Add(1)
-				go streamOnChangeSubscription(sub.GetPath(), c)
+				go streamOnChangeSubscription(c, sub.GetPath())
 			} else {
 				enqueFatalMsg(c, fmt.Sprintf("unsupported subscription mode, %v", subMode))
 				return
@@ -223,23 +223,24 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 }
 
 // streamOnChangeSubscription implemets Subscription "ON_CHANGE STREAM" mode
-func streamOnChangeSubscription(gnmiPath *gnmipb.Path, c *DbClient) {
+func streamOnChangeSubscription(c *DbClient, gnmiPath *gnmipb.Path) {
 	tblPaths := c.pathG2S[gnmiPath]
 	log.V(2).Infof("streamOnChangeSubscription gnmiPath: %v", gnmiPath)
 
 	if tblPaths[0].field != "" {
 		if len(tblPaths) > 1 {
-			go dbFieldMultiSubscribe(gnmiPath, c, true, time.Millisecond*200)
+			go dbFieldMultiSubscribe(c, gnmiPath, true, time.Millisecond*200)
 		} else {
-			go dbFieldSubscribe(gnmiPath, c, true, time.Millisecond*200)
+			go dbFieldSubscribe(c, gnmiPath, true, time.Millisecond*200)
 		}
 	} else {
-		go dbTableKeySubscribe(gnmiPath, c, 0)
+		// sample interval and update only parameters are not applicable
+		go dbTableKeySubscribe(c, gnmiPath, 0, true)
 	}
 }
 
 // streamSampleSubscription implemets Subscription "SAMPLE STREAM" mode
-func streamSampleSubscription(sub *gnmipb.Subscription, c *DbClient) {
+func streamSampleSubscription(c *DbClient, sub *gnmipb.Subscription, updateOnly bool) {
 	samplingInterval, err := validateSampleInterval(sub)
 	if err != nil {
 		enqueFatalMsg(c, err.Error())
@@ -253,12 +254,12 @@ func streamSampleSubscription(sub *gnmipb.Subscription, c *DbClient) {
 	log.V(2).Infof("streamSampleSubscription gnmiPath: %v", gnmiPath)
 	if tblPaths[0].field != "" {
 		if len(tblPaths) > 1 {
-			dbFieldMultiSubscribe(gnmiPath, c, false, samplingInterval)
+			dbFieldMultiSubscribe(c, gnmiPath, false, samplingInterval)
 		} else {
-			dbFieldSubscribe(gnmiPath, c, false, samplingInterval)
+			dbFieldSubscribe(c, gnmiPath, false, samplingInterval)
 		}
 	} else {
-		dbTableKeySubscribe(gnmiPath, c, samplingInterval)
+		dbTableKeySubscribe(c, gnmiPath, samplingInterval, updateOnly)
 	}
 }
 
@@ -729,7 +730,7 @@ func putFatalMsg(q *queue.PriorityQueue, msg string) {
 
 // for subscribe request with granularity of table field, the value is fetched periodically.
 // Upon value change, it will be put to queue for furhter notification
-func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, onChange bool, interval time.Duration) {
+func dbFieldMultiSubscribe(c *DbClient, gnmiPath *gnmipb.Path, onChange bool, interval time.Duration) {
 	defer c.w.Done()
 
 	tblPaths := c.pathG2S[gnmiPath]
@@ -825,7 +826,7 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, onChange bool, in
 
 // for subscribe request with granularity of table field, the value is fetched periodically.
 // Upon value change, it will be put to queue for furhter notification
-func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, onChange bool, interval time.Duration) {
+func dbFieldSubscribe(c *DbClient, gnmiPath *gnmipb.Path, onChange bool, interval time.Duration) {
 	defer c.w.Done()
 
 	tblPaths := c.pathG2S[gnmiPath]
@@ -909,7 +910,7 @@ type redisSubData struct {
 }
 
 // TODO: For delete operation, the exact content returned is to be clarified.
-func dbSingleTableKeySubscribe(rsd redisSubData, c *DbClient, updateChannel chan map[string]interface{}) {
+func dbSingleTableKeySubscribe(c *DbClient, rsd redisSubData, updateChannel chan map[string]interface{}) {
 	tblPath := rsd.tblPath
 	pubsub := rsd.pubsub
 	prefixLen := rsd.prefixLen
@@ -990,7 +991,7 @@ func dbSingleTableKeySubscribe(rsd redisSubData, c *DbClient, updateChannel chan
 	}
 }
 
-func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Duration) {
+func dbTableKeySubscribe(c *DbClient, gnmiPath *gnmipb.Path, interval time.Duration, updateOnly bool) {
 	defer c.w.Done()
 
 	tblPaths := c.pathG2S[gnmiPath]
@@ -1089,10 +1090,15 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 	}
 	signalSync()
 
+	// Clear the payload so that next time it will send only updates
+	if updateOnly {
+		msiAll = make(map[string]interface{})
+	}
+
 	// Start routines to listen on the table changes.
 	updateChannel := make(chan map[string]interface{})
 	for _, rsd := range rsdList {
-		go dbSingleTableKeySubscribe(rsd, c, updateChannel)
+		go dbSingleTableKeySubscribe(c, rsd, updateChannel)
 	}
 
 	// Listen on updates from tables.
@@ -1122,12 +1128,19 @@ func dbTableKeySubscribe(gnmiPath *gnmipb.Path, c *DbClient, interval time.Durat
 				}
 			}
 		case <-intervalTicker:
-			log.V(1).Infof("ticker received: %v", msiAll)
+			log.V(1).Infof("ticker received: %v", len(msiAll))
 
 			if err := sendMsiData(msiAll); err != nil {
 				handleFatalMsg(err.Error())
 				return
 			}
+
+			// Clear the payload so that next time it will send only updates
+			if updateOnly {
+				msiAll = make(map[string]interface{})
+				log.V(1).Infof("msiAll cleared: %v", len(msiAll))
+			}
+
 		case <-c.channel:
 			log.V(1).Infof("Stopping dbTableKeySubscribe routine for %v ", c.pathG2S)
 			return
