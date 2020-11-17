@@ -713,7 +713,7 @@ func putFatalMsg(q *queue.PriorityQueue, msg string) {
 
 // for subscribe request with granularity of table field, the value is fetched periodically.
 // Upon value change, it will be put to queue for furhter notification
-func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant bool, interval time.Duration) {
+func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, onChange bool, interval time.Duration) {
 	defer c.w.Done()
 
 	tblPaths := c.pathG2S[gnmiPath]
@@ -747,7 +747,7 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 
 			// This value was saved before and it hasn't changed since then
 			_, valueMapped := path2ValueMap[tblPath]
-			if supressRedundant && valueMapped && val == path2ValueMap[tblPath] {
+			if onChange && valueMapped && val == path2ValueMap[tblPath] {
 				continue
 			}
 
@@ -794,7 +794,7 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 		case <-c.channel:
 			log.V(1).Infof("Stopping dbFieldMultiSubscribe routine for Client %s ", c)
 			return
-		case <-time.After(interval):
+		case <-IntervalTicker(interval):
 			msi := readVal()
 
 			if len(msi) != 0 {
@@ -809,7 +809,7 @@ func dbFieldMultiSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant 
 
 // for subscribe request with granularity of table field, the value is fetched periodically.
 // Upon value change, it will be put to queue for furhter notification
-func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant bool, interval time.Duration) {
+func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, onChange bool, interval time.Duration) {
 	defer c.w.Done()
 
 	tblPaths := c.pathG2S[gnmiPath]
@@ -875,7 +875,7 @@ func dbFieldSubscribe(gnmiPath *gnmipb.Path, c *DbClient, supressRedundant bool,
 		case <-IntervalTicker(interval):
 			newVal := readVal()
 
-			if supressRedundant == false || newVal != val {
+			if onChange == false || newVal != val {
 				if err = sendVal(newVal); err != nil {
 					log.V(1).Infof("Queue error:  %v", err)
 					return

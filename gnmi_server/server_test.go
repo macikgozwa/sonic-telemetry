@@ -420,18 +420,6 @@ func prepareDbTranslib(t *testing.T) {
 	}
 }
 
-func getType(t client.Type) pb.SubscriptionList_Mode {
-	switch t {
-	case client.Once:
-		return pb.SubscriptionList_ONCE
-	case client.Stream:
-		return pb.SubscriptionList_STREAM
-	case client.Poll:
-		return pb.SubscriptionList_POLL
-	}
-	return pb.SubscriptionList_ONCE
-}
-
 func pathToString(q client.Path) string {
 	qq := make(client.Path, len(q))
 	copy(qq, q)
@@ -441,35 +429,6 @@ func pathToString(q client.Path) string {
 		qq[i] = strings.Replace(e, "/", "\\/", -1)
 	}
 	return strings.Join(qq, "/")
-}
-
-func queryToSubscription(q client.Query) (*pb.SubscribeRequest, error) {
-	s := &pb.SubscribeRequest_Subscribe{
-		Subscribe: &pb.SubscriptionList{
-			Mode:   getType(q.Type),
-			Prefix: &pb.Path{Target: q.Target},
-		},
-	}
-	if q.UpdatesOnly {
-		s.Subscribe.UpdatesOnly = true
-	}
-	for _, qq := range q.Queries {
-		pp, err := ygot.StringToPath(pathToString(qq), ygot.StructuredPath, ygot.StringSlicePath)
-		if err != nil {
-			return nil, fmt.Errorf("invalid query path %q: %v", qq, err)
-		}
-		s.Subscribe.Subscription = append(s.Subscribe.Subscription, &pb.Subscription{Path: pp})
-	}
-	return &pb.SubscribeRequest{Request: s}, nil
-}
-
-func queryToSubscriptionOrFail(t *testing.T, q client.Query) *pb.SubscribeRequest {
-	sub, err := queryToSubscription(q)
-	if err != nil {
-		t.Fatalf("failed to create subscription: %v", err)
-	}
-
-	return sub
 }
 
 type subscriptionQuery struct {
@@ -532,7 +491,6 @@ func createCountersDbQueryOnChangeMode(t *testing.T, paths ...string) client.Que
 }
 
 func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths ...string) client.Query {
-	t.Logf("%v %v", interval, uint64(interval.Nanoseconds()))
 	return createQueryOrFail(t,
 		pb.SubscriptionList_STREAM,
 		"COUNTERS_DB",
@@ -546,7 +504,7 @@ func createCountersDbQuerySampleMode(t *testing.T, interval time.Duration, paths
 		false)
 }
 
-func createCountersTableUpdate(tableKey string, fieldName string, fieldValue string) tablePathValue {
+func createCountersTableSetUpdate(tableKey string, fieldName string, fieldValue string) tablePathValue {
 	return tablePathValue{
 		dbName:    "COUNTERS_DB",
 		tableName: "COUNTERS",
@@ -554,6 +512,18 @@ func createCountersTableUpdate(tableKey string, fieldName string, fieldValue str
 		delimitor: ":",
 		field:     fieldName,
 		value:     fieldValue,
+	}
+}
+
+func createCountersTableDeleteUpdate(tableKey string, fieldName string) tablePathValue {
+	return tablePathValue{
+		dbName:    "COUNTERS_DB",
+		tableName: "COUNTERS",
+		tableKey:  tableKey,
+		delimitor: ":",
+		field:     fieldName,
+		value:     "",
+		op:        "hdel",
 	}
 }
 
@@ -595,7 +565,7 @@ func mergeMaps(sourceOrigin interface{}, updateOrigin interface{}) interface{} {
 				sourceStrMap[itemKey] = mergeMaps(sourceItem, updateItem)
 			}
 		}
-		return update
+		return sourceStrMap
 	}
 
 	return update
@@ -1849,7 +1819,7 @@ func runTestSubscribe(t *testing.T) {
 			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68"),
 			generateIntervals: true,
 			updates: []tablePathValue{
-				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
+				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
@@ -1863,7 +1833,7 @@ func runTestSubscribe(t *testing.T) {
 			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
 			generateIntervals: true,
 			updates: []tablePathValue{
-				createCountersTableUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
+				createCountersTableSetUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "3"), // be changed to 3 from 2
 				createIntervalTickerUpdate(), // no value change but imitate interval ticker
 			},
 			wantNoti: []client.Notification{
@@ -1879,7 +1849,7 @@ func runTestSubscribe(t *testing.T) {
 			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1"),
 			generateIntervals: true,
 			updates: []tablePathValue{
-				createCountersTableUpdate("oid:0x1000000000039", "test_field", "test_value"),
+				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
 				createIntervalTickerUpdate(), // no value change but imitate interval ticker
 			},
 			wantNoti: []client.Notification{
@@ -1895,8 +1865,8 @@ func runTestSubscribe(t *testing.T) {
 			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68", "Pfcwd"),
 			generateIntervals: true,
 			updates: []tablePathValue{
-				createCountersTableUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
-				createCountersTableUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+				createIntervalTickerUpdate(), // no value change but imitate interval ticker
 			},
 			wantNoti: []client.Notification{
 				client.Connected{},
@@ -1906,12 +1876,89 @@ func runTestSubscribe(t *testing.T) {
 				client.Update{Path: []string{"COUNTERS", "Ethernet68", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernet68PfcwdJson, countersEthernet68PfcwdJsonUpdate)},
 			},
 		},
+		{
+			desc:              "(use vendor alias) sample stream query for COUNTERS/[Ethernet68/1]/Pfcwd with update of field value",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet68/1", "Pfcwd"),
+			generateIntervals: true,
+			updates: []tablePathValue{
+				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "0"), // change back to 0
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernet68PfcwdAliasJson, countersEthernet68PfcwdAliasJsonUpdate)},
+				client.Update{Path: []string{"COUNTERS", "Ethernet68/1", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernet68PfcwdAliasJson},
+			},
+		},
+		{
+			desc:              "sample stream query for table key Ethernet* with new test_field field on Ethernet68",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*"),
+			generateIntervals: true,
+			updates: []tablePathValue{
+				createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildcardJson, countersEtherneWildcardJsonUpdate)},
+			},
+		},
+		/*
+			// deletion of field from table is not supported. It'd keep sending the last value before the deletion.
+				{
+					desc:              "sample stream query for table key Ethernet* with new test_field field deleted from Ethernet68",
+					q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*"),
+					generateIntervals: true,
+					updates: []tablePathValue{
+						createCountersTableSetUpdate("oid:0x1000000000039", "test_field", "test_value"),
+						createCountersTableDeleteUpdate("oid:0x1000000000039", "test_field"),
+					},
+					wantNoti: []client.Notification{
+						client.Connected{},
+						client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson},
+						client.Sync{},
+						client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildcardJson, countersEtherneWildcardJsonUpdate)},
+						client.Update{Path: []string{"COUNTERS", "Ethernet*"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardJson}, //go back to original after deletion of test_field
+					},
+				},
+		*/
+		{
+			desc:              "sample stream query for table key Ethernet*/SAI_PORT_STAT_PFC_7_RX_PKTS with field value update",
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"),
+			generateIntervals: true,
+			updates: []tablePathValue{
+				createCountersTableSetUpdate("oid:0x1000000000039", "SAI_PORT_STAT_PFC_7_RX_PKTS", "4"),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: countersEthernetWildcardPfcJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "SAI_PORT_STAT_PFC_7_RX_PKTS"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildcardPfcJson, singlePortPfcJsonUpdate)},
+			},
+		},
+		{
+			desc:              "sample stream query for table key Ethernet*/Pfcwd with field value update",
+			generateIntervals: true,
+			q:                 createCountersDbQuerySampleMode(t, 0, "COUNTERS", "Ethernet*", "Pfcwd"),
+			updates: []tablePathValue{
+				createCountersTableSetUpdate("oid:0x1500000000091e", "PFC_WD_QUEUE_STATS_DEADLOCK_DETECTED", "1"),
+			},
+			wantNoti: []client.Notification{
+				client.Connected{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: countersEthernetWildPfcwdJson},
+				client.Sync{},
+				client.Update{Path: []string{"COUNTERS", "Ethernet*", "Pfcwd"}, TS: time.Unix(0, 200), Val: mergeMaps(countersEthernetWildPfcwdJson, countersEthernet68PfcwdAliasJsonUpdate)},
+			},
+		},
 	}
 
 	rclient := getRedisClient(t)
 	defer rclient.Close()
-	for _, tt := range tests[22:] {
-		// for _, tt := range tests {
+	//for _, tt := range tests[22:] {
+	for _, tt := range tests {
 		prepareDb(t)
 		// Extra db preparation for this test case
 		for _, prepare := range tt.prepares {
