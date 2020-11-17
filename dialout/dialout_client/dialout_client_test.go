@@ -6,6 +6,7 @@ package telemetry_dialout
 import (
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 
 	"github.com/go-redis/redis"
 
@@ -509,6 +510,10 @@ func TestGNMIDialOutPublish(t *testing.T) {
 }
 
 func init() {
+	// Enable logs at UT setup
+	flag.Lookup("v").Value.Set("10")
+	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
+
 	// Inform gNMI server to use redis tcp localhost connection
 	sdc.UseRedisLocalTcpPort = true
 }

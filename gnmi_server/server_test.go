@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	glog "github.com/golang/glog"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
@@ -2056,12 +2055,6 @@ func runTestSubscribe(t *testing.T) {
 }
 
 func TestGnmiSubscribe(t *testing.T) {
-	// flag.Lookup("logtostderr").Value.Set("true")
-	flag.Lookup("v").Value.Set("10")
-	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
-	defer glog.Flush()
-	glog.Info("Starting...")
-
 	s := createServer(t)
 	go runServer(t, s)
 
@@ -2105,6 +2098,10 @@ func TestCapabilities(t *testing.T) {
 }
 
 func init() {
+	// Enable logs at UT setup
+	flag.Lookup("v").Value.Set("10")
+	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
+
 	// Inform gNMI server to use redis tcp localhost connection
 	sdc.UseRedisLocalTcpPort = true
 }

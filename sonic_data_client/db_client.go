@@ -171,11 +171,13 @@ func (c *DbClient) StreamRun(q *queue.PriorityQueue, stop chan struct{}, w *sync
 	c.q = q
 	c.channel = stop
 
+	log.V(2).Infof("Stream subscription request received, mode: %v, subscription count: %v",
+		subscribe.GetMode(),
+		len(subscribe.GetSubscription()))
+
 	for _, sub := range subscribe.GetSubscription() {
 		log.V(2).Infof("Sub mode: %v, path: %v", sub.GetMode(), sub.GetPath())
 		subMode := sub.GetMode()
-
-		log.V(2).Infof("%s mode subscription selected, %v", subMode, sub.GetPath())
 
 		if subMode == gnmipb.SubscriptionMode_SAMPLE {
 			c.w.Add(1)
