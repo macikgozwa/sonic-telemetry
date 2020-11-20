@@ -3,13 +3,17 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v2"
+
 	spb "github.com/Azure/sonic-telemetry/proto"
+	"github.com/Workiva/go-datastructures/queue"
 	linuxproc "github.com/c9s/goprocinfo/linux"
 	log "github.com/golang/glog"
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
-	"github.com/Workiva/go-datastructures/queue"
-	"sync"
-	"time"
 )
 
 // Non db client is to Handle
@@ -32,9 +36,22 @@ type statsRing struct {
 	mu       sync.RWMutex // Mutex for data protection
 }
 
+type SonicVersionInfo struct {
+	BuildVersion string `yaml:"build_version"` // cache for build_version, empty string means it is not initialized.
+}
+
+// sonicVersionYmlStash holds the content of '/etc/sonic/sonic_version.yml'
+// Assumed that the content of the fileContent doesn't change during the lifetime of telemetry service.
+type sonicVersionYmlStash struct {
+	once        sync.Once
+	versionInfo SonicVersionInfo
+}
+
 var (
 	clientTrie *Trie
 	statsR     statsRing
+
+	versionFileStash sonicVersionYmlStash
 
 	// path2DataFuncTbl is used to populate trie tree which is reponsible
 	// for getting data at the path specified
@@ -62,6 +79,10 @@ var (
 		{ // Get proc stat
 			path:    []string{"OTHERS", "proc", "stat"},
 			getFunc: dataGetFunc(getProcStat),
+		},
+		{ // OS build version
+			path:    []string{"OTHERS", "osversion", "build"},
+			getFunc: dataGetFunc(getBuildVersion),
 		},
 	}
 )
@@ -246,6 +267,38 @@ func getProcStat() ([]byte, error) {
 	return b, nil
 }
 
+func getBuildVersion() ([]byte, error) {
+
+	sonicVersionFilePath := "/etc/sonic/sonic_version.yml"
+	readAndParseSonicVersionFile := func() {
+		versionFileStash.versionInfo.BuildVersion = "sonic.NA"
+
+		fileContent, err := ioutil.ReadFile(sonicVersionFilePath)
+		if err != nil {
+			log.Errorf("Failed to read '%v', %v", sonicVersionFilePath, err)
+			return
+		}
+
+		err = yaml.Unmarshal(fileContent, &versionFileStash.versionInfo)
+		if err != nil {
+			log.Errorf("Failed to parse '%v', %v", sonicVersionFilePath, err)
+			return
+		}
+
+		versionFileStash.versionInfo.BuildVersion = "sonic." + versionFileStash.versionInfo.BuildVersion
+	}
+
+	versionFileStash.once.Do(readAndParseSonicVersionFile)
+
+	b, err := json.Marshal(versionFileStash.versionInfo)
+	if err != nil {
+		log.V(2).Infof("%v", err)
+		return b, err
+	}
+	log.V(4).Infof("getBuildVersion, output %v", string(b))
+	return b, nil
+}
+
 func pollStats() {
 	for {
 		stat, err := linuxproc.ReadStat("/proc/stat")
@@ -411,10 +464,9 @@ func (c *NonDbClient) Close() error {
 	return nil
 }
 
-func  (c *NonDbClient) Set(path *gnmipb.Path, t *gnmipb.TypedValue, flagop int) error {
+func (c *NonDbClient) Set(path *gnmipb.Path, t *gnmipb.TypedValue, flagop int) error {
 	return nil
 }
-func (c *NonDbClient) Capabilities() ([]gnmipb.ModelData) {
+func (c *NonDbClient) Capabilities() []gnmipb.ModelData {
 	return nil
 }
-
