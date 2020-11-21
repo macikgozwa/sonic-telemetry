@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"sync"
 	"time"
 
@@ -21,6 +20,9 @@ import (
 
 const (
 	statsRingCap uint64 = 3000 // capacity of statsRing.
+
+	// SonicVersionFilePath is the path of build version YML file.
+	SonicVersionFilePath = "/etc/sonic/sonic_version.yml"
 )
 
 type dataGetFunc func() ([]byte, error)
@@ -37,7 +39,7 @@ type statsRing struct {
 }
 
 type SonicVersionInfo struct {
-	BuildVersion string `yaml:"build_version"` // cache for build_version, empty string means it is not initialized.
+	BuildVersion string `yaml:"build_version" json:"build_version"` // cache for build_version, empty string means it is not initialized.
 }
 
 // sonicVersionYmlStash holds the content of '/etc/sonic/sonic_version.yml'
@@ -268,20 +270,18 @@ func getProcStat() ([]byte, error) {
 }
 
 func getBuildVersion() ([]byte, error) {
-
-	sonicVersionFilePath := "/etc/sonic/sonic_version.yml"
 	readAndParseSonicVersionFile := func() {
 		versionFileStash.versionInfo.BuildVersion = "sonic.NA"
 
-		fileContent, err := ioutil.ReadFile(sonicVersionFilePath)
+		fileContent, err := ImplIoutilReadFile(SonicVersionFilePath)
 		if err != nil {
-			log.Errorf("Failed to read '%v', %v", sonicVersionFilePath, err)
+			log.Errorf("Failed to read '%v', %v", SonicVersionFilePath, err)
 			return
 		}
 
 		err = yaml.Unmarshal(fileContent, &versionFileStash.versionInfo)
 		if err != nil {
-			log.Errorf("Failed to parse '%v', %v", sonicVersionFilePath, err)
+			log.Errorf("Failed to parse '%v', %v", SonicVersionFilePath, err)
 			return
 		}
 

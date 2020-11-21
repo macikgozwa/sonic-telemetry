@@ -6,9 +6,18 @@ package gnmi
 import (
 	"crypto/tls"
 	"encoding/json"
+	"flag"
+
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
 	"github.com/go-redis/redis"
 	"github.com/golang/protobuf/proto"
+
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"reflect"
+	"testing"
+	"time"
 
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/client"
@@ -19,17 +28,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"reflect"
-	"testing"
-	"time"
+
 	// Register supported client types.
 	sdc "github.com/Azure/sonic-telemetry/sonic_data_client"
 	sdcfg "github.com/Azure/sonic-telemetry/sonic_db_config"
 	gclient "github.com/jipanyang/gnmi/client/gnmi"
-
 )
 
 var clientTypes = []string{gclient.Type}
@@ -117,11 +120,13 @@ func runTestGet(t *testing.T, ctx context.Context, gClient pb.GNMIClient, pathTa
 		t.Fatal("got a non-grpc error from grpc call")
 	}
 
+	t.Logf("Response: %v, error: %v", resp, err)
+
 	if gotRetStatus.Code() != wantRetCode {
 		t.Log("err: ", err)
 		t.Fatalf("got return code %v, want %v", gotRetStatus.Code(), wantRetCode)
 	}
-	
+
 	// Check response value
 	if valTest {
 		var gotVal interface{}
@@ -389,7 +394,7 @@ func prepareDbTranslib(t *testing.T) {
 	rclient := getRedisClient(t)
 	rclient.FlushDB()
 	rclient.Close()
-	
+
 	//Enable keysapce notification
 	os.Setenv("PATH", "/usr/bin:/sbin:/bin:/usr/local/bin")
 	cmd := exec.Command("redis-cli", "config", "set", "notify-keyspace-events", "KEA")
@@ -512,8 +517,6 @@ func TestGnmiSet(t *testing.T) {
 	s.s.Stop()
 }
 
-
-
 func TestGnmiGet(t *testing.T) {
 	//t.Log("Start server")
 	s := createServer(t)
@@ -585,6 +588,7 @@ func TestGnmiGet(t *testing.T) {
 		wantRetCode codes.Code
 		wantRespVal interface{}
 		valTest     bool
+		testInit    func()
 	}{{
 		desc:       "Test non-existing path Target",
 		pathTarget: "MY_DB",
@@ -701,10 +705,54 @@ func TestGnmiGet(t *testing.T) {
 				`,
 		wantRetCode: codes.OK,
 		wantRespVal: countersEthernetWildcardPfcwdByte,
+	}, {
+		desc:       "get osversion/build",
+		pathTarget: "OTHERS",
+		textPbPath: `
+					elem: <name: "osversion" >
+					elem: <name: "build" >
+				`,
+		wantRetCode: codes.OK,
+		valTest:     true,
+		wantRespVal: []byte(`{"build_version": "sonic.20191234.56"}`),
+		testInit: func() {
+			sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
+				if filePath == sdc.SonicVersionFilePath {
+					return []byte("build_version: '20191234.56'\ndebian_version: '9.13'"), nil
+				}
+
+				return ioutil.ReadFile(filePath)
+			}
+
+		},
+	}, {
+		desc:       "get osversion/build",
+		pathTarget: "OTHERS",
+		textPbPath: `
+					elem: <name: "osversion" >
+					elem: <name: "build" >
+				`,
+		wantRetCode: codes.OK,
+		valTest:     true,
+		wantRespVal: []byte(`{"build_version": "sonic.20196543.21"}`),
+		testInit: func() {
+			sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
+				if filePath == sdc.SonicVersionFilePath {
+					return []byte("build_version: '20196543.56'\ndebian_version: '9.13'"), nil
+				}
+
+				return ioutil.ReadFile(filePath)
+			}
+
+		},
 	},
 	}
 
-	for _, td := range tds {
+	for _, td := range tds[len(tds)-2:] {
+		if td.testInit != nil {
+			td.testInit()
+		}
+
 		t.Run(td.desc, func(t *testing.T) {
 			runTestGet(t, ctx, gClient, td.pathTarget, td.textPbPath, td.wantRetCode, td.wantRespVal, td.valTest)
 		})
@@ -745,56 +793,56 @@ func TestGnmiGetTranslib(t *testing.T) {
 	}{
 
 		//These tests only work on the real switch platform, since they rely on files in the /proc and another running service
-	// 	{
-	// 	desc:       "Get OC Platform",
-	// 	pathTarget: "OC_YANG",
-	// 	textPbPath: `
- //                        elem: <name: "openconfig-platform:components" >
- //                `,
-	// 	wantRetCode: codes.OK,
-	// 	wantRespVal: emptyRespVal,
-	// 	valTest:     false,
-	// },
-	// 	{
-	// 		desc:       "Get OC System State",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "state" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System CPU",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "cpus" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System memory",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "memory" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
-	// 	{
-	// 		desc:       "Get OC System processes",
-	// 		pathTarget: "OC_YANG",
-	// 		textPbPath: `
- //                        elem: <name: "openconfig-system:system" > elem: <name: "processes" >
- //                `,
-	// 		wantRetCode: codes.OK,
-	// 		wantRespVal: emptyRespVal,
-	// 		valTest:     false,
-	// 	},
+		// 	{
+		// 	desc:       "Get OC Platform",
+		// 	pathTarget: "OC_YANG",
+		// 	textPbPath: `
+		//                        elem: <name: "openconfig-platform:components" >
+		//                `,
+		// 	wantRetCode: codes.OK,
+		// 	wantRespVal: emptyRespVal,
+		// 	valTest:     false,
+		// },
+		// 	{
+		// 		desc:       "Get OC System State",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "state" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System CPU",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "cpus" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System memory",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "memory" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
+		// 	{
+		// 		desc:       "Get OC System processes",
+		// 		pathTarget: "OC_YANG",
+		// 		textPbPath: `
+		//                        elem: <name: "openconfig-system:system" > elem: <name: "processes" >
+		//                `,
+		// 		wantRetCode: codes.OK,
+		// 		wantRespVal: emptyRespVal,
+		// 		valTest:     false,
+		// 	},
 		{
 			desc:       "Get OC Interfaces",
 			pathTarget: "OC_YANG",
@@ -1788,6 +1836,10 @@ func TestCapabilities(t *testing.T) {
 }
 
 func init() {
+	// Enable logs at UT setup
+	flag.Lookup("v").Value.Set("10")
+	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
+
 	// Inform gNMI server to use redis tcp localhost connection
 	sdc.UseRedisLocalTcpPort = true
 }
