@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"time"
 
@@ -38,15 +39,21 @@ type statsRing struct {
 	mu       sync.RWMutex // Mutex for data protection
 }
 
+// SonicVersionInfo is a data model struct to serialize '/etc/sonic/sonic_version.yml'
 type SonicVersionInfo struct {
-	BuildVersion string `yaml:"build_version" json:"build_version"` // cache for build_version, empty string means it is not initialized.
+	BuildVersion string `yaml:"build_version" json:"build_version"`
 }
 
 // sonicVersionYmlStash holds the content of '/etc/sonic/sonic_version.yml'
-// Assumed that the content of the fileContent doesn't change during the lifetime of telemetry service.
+// Assumed that the content of the file doesn't change during the lifetime of telemetry service.
 type sonicVersionYmlStash struct {
-	once        sync.Once
+	once        sync.Once // sync object to make sure file is loaded only once.
 	versionInfo SonicVersionInfo
+}
+
+// InvalidateVersionFileStash invalidates the cache that keeps version file content.
+func InvalidateVersionFileStash() {
+	versionFileStash = sonicVersionYmlStash{}
 }
 
 var (
@@ -55,10 +62,13 @@ var (
 
 	versionFileStash sonicVersionYmlStash
 
-	// path2DataFuncTbl is used to populate trie tree which is reponsible
+	// ImplIoutilReadFile points to the implementation of ioutil.ReadFile. Should be overridden by UTs only.
+	ImplIoutilReadFile func(string) ([]byte, error) = ioutil.ReadFile
+
+	// path2DataFuncTbl is used to populate trie tree which is responsible
 	// for getting data at the path specified
 	path2DataFuncTbl = []path2DataFunc{
-		{ // Get cpu utilizaation
+		{ // Get cpu utilization
 			path:    []string{"OTHERS", "platform", "cpu"},
 			getFunc: dataGetFunc(getCpuUtil),
 		},
@@ -270,7 +280,9 @@ func getProcStat() ([]byte, error) {
 }
 
 func getBuildVersion() ([]byte, error) {
-	readAndParseSonicVersionFile := func() {
+
+	// Load and parse the content of version file
+	versionFileStash.once.Do(func() {
 		versionFileStash.versionInfo.BuildVersion = "sonic.NA"
 
 		fileContent, err := ImplIoutilReadFile(SonicVersionFilePath)
@@ -285,10 +297,11 @@ func getBuildVersion() ([]byte, error) {
 			return
 		}
 
-		versionFileStash.versionInfo.BuildVersion = "sonic." + versionFileStash.versionInfo.BuildVersion
-	}
-
-	versionFileStash.once.Do(readAndParseSonicVersionFile)
+		// Prepend 'sonic.' to the build version string.
+		if versionFileStash.versionInfo.BuildVersion != "sonic.NA" {
+			versionFileStash.versionInfo.BuildVersion = "sonic." + versionFileStash.versionInfo.BuildVersion
+		}
+	})
 
 	b, err := json.Marshal(versionFileStash.versionInfo)
 	if err != nil {

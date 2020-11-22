@@ -6,7 +6,7 @@ package gnmi
 import (
 	"crypto/tls"
 	"encoding/json"
-	"flag"
+	"fmt"
 
 	testcert "github.com/Azure/sonic-telemetry/testdata/tls"
 	"github.com/go-redis/redis"
@@ -581,7 +581,7 @@ func TestGnmiGet(t *testing.T) {
 		t.Fatalf("read file %v err: %v", fileName, err)
 	}
 
-	tds := []struct {
+	type testCase struct {
 		desc        string
 		pathTarget  string
 		textPbPath  string
@@ -589,7 +589,37 @@ func TestGnmiGet(t *testing.T) {
 		wantRespVal interface{}
 		valTest     bool
 		testInit    func()
-	}{{
+	}
+
+	// A helper function create test cases for 'osversion/build' queries.
+	createBuildVersionTestCase := func(desc string, wantedVersion string, versionFileContent string, fileReadErr error) testCase {
+		return testCase{
+			desc:       desc,
+			pathTarget: "OTHERS",
+			textPbPath: `
+						elem: <name: "osversion" >
+						elem: <name: "build" >
+					`,
+			wantRetCode: codes.OK,
+			valTest:     true,
+			wantRespVal: []byte(wantedVersion),
+			testInit: func() {
+				sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
+					if filePath == sdc.SonicVersionFilePath {
+						if fileReadErr != nil {
+							return nil, fileReadErr
+						}
+						return []byte(versionFileContent), nil
+					}
+					return ioutil.ReadFile(filePath)
+				}
+
+				sdc.InvalidateVersionFileStash()
+			},
+		}
+	}
+
+	tds := []testCase{{
 		desc:       "Test non-existing path Target",
 		pathTarget: "MY_DB",
 		textPbPath: `
@@ -705,50 +735,14 @@ func TestGnmiGet(t *testing.T) {
 				`,
 		wantRetCode: codes.OK,
 		wantRespVal: countersEthernetWildcardPfcwdByte,
-	}, {
-		desc:       "get osversion/build",
-		pathTarget: "OTHERS",
-		textPbPath: `
-					elem: <name: "osversion" >
-					elem: <name: "build" >
-				`,
-		wantRetCode: codes.OK,
-		valTest:     true,
-		wantRespVal: []byte(`{"build_version": "sonic.20191234.56"}`),
-		testInit: func() {
-			sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
-				if filePath == sdc.SonicVersionFilePath {
-					return []byte("build_version: '20191234.56'\ndebian_version: '9.13'"), nil
-				}
-
-				return ioutil.ReadFile(filePath)
-			}
-
-		},
-	}, {
-		desc:       "get osversion/build",
-		pathTarget: "OTHERS",
-		textPbPath: `
-					elem: <name: "osversion" >
-					elem: <name: "build" >
-				`,
-		wantRetCode: codes.OK,
-		valTest:     true,
-		wantRespVal: []byte(`{"build_version": "sonic.20196543.21"}`),
-		testInit: func() {
-			sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
-				if filePath == sdc.SonicVersionFilePath {
-					return []byte("build_version: '20196543.56'\ndebian_version: '9.13'"), nil
-				}
-
-				return ioutil.ReadFile(filePath)
-			}
-
-		},
 	},
+		createBuildVersionTestCase("get osversion/build", `{"build_version": "sonic.12345678.90"}`, "build_version: '12345678.90'\ndebian_version: '9.13'", nil),
+		createBuildVersionTestCase("get osversion/build file load error", `{"build_version": "sonic.NA"}`, "", fmt.Errorf("Cannot access '%v' ", sdc.SonicVersionFilePath)),
+		createBuildVersionTestCase("get osversion/build file parse error", `{"build_version": "sonic.NA"}`, "no a valid YAML content", nil),
+		createBuildVersionTestCase("get osversion/build different value", `{"build_version": "sonic.23456789.01"}`, "build_version: '23456789.01'\ndebian_version: '9.15'", nil),
 	}
 
-	for _, td := range tds[len(tds)-2:] {
+	for _, td := range tds {
 		if td.testInit != nil {
 			td.testInit()
 		}
@@ -1836,10 +1830,6 @@ func TestCapabilities(t *testing.T) {
 }
 
 func init() {
-	// Enable logs at UT setup
-	flag.Lookup("v").Value.Set("10")
-	flag.Lookup("log_dir").Value.Set("/tmp/telemetrytest")
-
 	// Inform gNMI server to use redis tcp localhost connection
 	sdc.UseRedisLocalTcpPort = true
 }
