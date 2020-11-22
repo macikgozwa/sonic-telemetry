@@ -120,8 +120,6 @@ func runTestGet(t *testing.T, ctx context.Context, gClient pb.GNMIClient, pathTa
 		t.Fatal("got a non-grpc error from grpc call")
 	}
 
-	t.Logf("Response: %v, error: %v", resp, err)
-
 	if gotRetStatus.Code() != wantRetCode {
 		t.Log("err: ", err)
 		t.Fatalf("got return code %v, want %v", gotRetStatus.Code(), wantRetCode)
@@ -604,6 +602,7 @@ func TestGnmiGet(t *testing.T) {
 			valTest:     true,
 			wantRespVal: []byte(wantedVersion),
 			testInit: func() {
+				// Override file read function to mock file content.
 				sdc.ImplIoutilReadFile = func(filePath string) ([]byte, error) {
 					if filePath == sdc.SonicVersionFilePath {
 						if fileReadErr != nil {
@@ -614,6 +613,7 @@ func TestGnmiGet(t *testing.T) {
 					return ioutil.ReadFile(filePath)
 				}
 
+				// Reset the cache so that the content gets loaded again.
 				sdc.InvalidateVersionFileStash()
 			},
 		}

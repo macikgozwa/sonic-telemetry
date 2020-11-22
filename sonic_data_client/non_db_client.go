@@ -39,12 +39,12 @@ type statsRing struct {
 	mu       sync.RWMutex // Mutex for data protection
 }
 
-// SonicVersionInfo is a data model struct to serialize '/etc/sonic/sonic_version.yml'
+// SonicVersionInfo is a data model to serialize '/etc/sonic/sonic_version.yml'
 type SonicVersionInfo struct {
 	BuildVersion string `yaml:"build_version" json:"build_version"`
 }
 
-// sonicVersionYmlStash holds the content of '/etc/sonic/sonic_version.yml'
+// sonicVersionYmlStash caches the content of '/etc/sonic/sonic_version.yml'
 // Assumed that the content of the file doesn't change during the lifetime of telemetry service.
 type sonicVersionYmlStash struct {
 	once        sync.Once // sync object to make sure file is loaded only once.
