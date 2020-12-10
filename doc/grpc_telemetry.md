@@ -535,19 +535,19 @@ US-M:sonic-telemetry jipanyang$ go test -v ./gnmi_server/
 === RUN   TestGnmiGet/Test_empty_path_target
 === RUN   TestGnmiGet/Get_valid_but_non-existing_node
 === RUN   TestGnmiGet/Get_COUNTERS_PORT_NAME_MAP
-=== RUN   TestGnmiGet/get_COUNTERS:Ethernet68
-=== RUN   TestGnmiGet/get_COUNTERS:Ethernet68_SAI_PORT_STAT_PFC_7_RX_PKTS
-=== RUN   TestGnmiGet/get_COUNTERS:Ethernet*
-=== RUN   TestGnmiGet/get_COUNTERS:Ethernet*_SAI_PORT_STAT_PFC_7_RX_PKTS
+=== RUN   TestGnmiGet/get_COUNTERS_Ethernet68
+=== RUN   TestGnmiGet/get_COUNTERS_Ethernet68_SAI_PORT_STAT_PFC_7_RX_PKTS
+=== RUN   TestGnmiGet/get_COUNTERS_Ethernet*
+=== RUN   TestGnmiGet/get_COUNTERS_Ethernet*_SAI_PORT_STAT_PFC_7_RX_PKTS
 --- PASS: TestGnmiGet (14.32s)
     --- PASS: TestGnmiGet/Test_non-existing_path_Target (0.11s)
     --- PASS: TestGnmiGet/Test_empty_path_target (0.00s)
     --- PASS: TestGnmiGet/Get_valid_but_non-existing_node (0.00s)
     --- PASS: TestGnmiGet/Get_COUNTERS_PORT_NAME_MAP (0.00s)
-    --- PASS: TestGnmiGet/get_COUNTERS:Ethernet68 (0.01s)
-    --- PASS: TestGnmiGet/get_COUNTERS:Ethernet68_SAI_PORT_STAT_PFC_7_RX_PKTS (0.00s)
-    --- PASS: TestGnmiGet/get_COUNTERS:Ethernet* (0.01s)
-    --- PASS: TestGnmiGet/get_COUNTERS:Ethernet*_SAI_PORT_STAT_PFC_7_RX_PKTS (0.01s)
+    --- PASS: TestGnmiGet/get_COUNTERS_Ethernet68 (0.01s)
+    --- PASS: TestGnmiGet/get_COUNTERS_Ethernet68_SAI_PORT_STAT_PFC_7_RX_PKTS (0.00s)
+    --- PASS: TestGnmiGet/get_COUNTERS_Ethernet* (0.01s)
+    --- PASS: TestGnmiGet/get_COUNTERS_Ethernet*_SAI_PORT_STAT_PFC_7_RX_PKTS (0.01s)
 === RUN   TestGnmiSubscribe
 === RUN   TestGnmiSubscribe/stream_query_for_table_COUNTERS_PORT_NAME_MAP_with_new_test_field_field
 === RUN   TestGnmiSubscribe/stream_query_for_table_key_Ethernet68_with_new_test_field_field
